@@ -1,0 +1,1 @@
+Error: failed to create mcpd daemon instance: config file cannot be found, run: 'mcpd init'

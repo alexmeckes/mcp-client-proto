@@ -1,0 +1,22 @@
+mcpd daemon running in 'dev' mode.
+
+  Local API:	http://localhost:8090/api/v1
+  OpenAPI UI:	http://localhost:8090/docs
+  Config file:	.mcpd.toml
+  Secrets file:	/Users/ameckes/.config/mcpd/secrets.dev.toml
+
+Press Ctrl+C to stop.
+
+2025-08-07T18:00:16.052-0400 [INFO]  mcpd: Development-focused mode: addr=0.0.0.0:8090 override=localhost:8090
+2025-08-07T18:00:16.053-0400 [INFO]  mcpd: Launching daemon in dev mode: addr=localhost:8090
+2025-08-07T18:00:16.053-0400 [DEBUG] mcpd.daemon.mcp.filesystem: attempting to start server: binary=npx
+2025-08-07T18:00:16.054-0400 [INFO]  mcpd.daemon.mcp.filesystem: Started
+2025-08-07T18:00:16.851-0400 [INFO]  mcpd.daemon.mcp.filesystem: Secure MCP Filesystem Server running on stdio
+2025-08-07T18:00:16.853-0400 [INFO]  mcpd.daemon.mcp.filesystem: Initialized: 'secure-filesystem-server@0.2.0'
+2025-08-07T18:00:16.853-0400 [INFO]  mcpd.daemon.mcp.filesystem: Ready!
+2025-08-07T18:00:16.853-0400 [INFO]  mcpd.daemon: Starting health check loop: interval=10s timeout=3s
+2025-08-07T18:00:16.853-0400 [INFO]  mcpd.api: Starting API server: address=localhost:8090 prefix=/api/v1
+2025-08-07T18:00:16.854-0400 [DEBUG] mcpd.daemon: Ping successful: server=filesystem latency="500.959µs"
+2025-08-07T18:00:16.855-0400 [INFO]  mcpd.daemon: Stopping health check loop
+2025-08-07T18:00:16.855-0400 [INFO]  mcpd.daemon: Shutting down MCP servers and client connections
+2025-08-07T18:00:16.860-0400 [ERROR] mcpd: daemon exited with error: error="listen tcp 127.0.0.1:8090: bind: address already in use"

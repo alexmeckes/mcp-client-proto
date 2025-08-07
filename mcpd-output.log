@@ -1,0 +1,2 @@
+Error: failed to create mcpd daemon instance: invalid runtime configuration:
+required argument /tmp/mcp-test-directory with value missing

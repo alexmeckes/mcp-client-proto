@@ -1,0 +1,114 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj
+
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    main: .
+    binary: mcpd
+    ldflags:
+      - -s -w  # Strip debug info and symbol table
+      - -X 'github.com/mozilla-ai/mcpd/v2/internal/cmd.version={{.Version}}'  # Bake in version
+      - -X 'github.com/mozilla-ai/mcpd/v2/internal/cmd.commit={{.Commit}}'    # Bake in commit hash
+      - -X 'github.com/mozilla-ai/mcpd/v2/internal/cmd.date={{.Date}}'        # Bake in build date
+    flags:
+      - -trimpath  # Remove file system paths from binary
+
+archives:
+  - formats: [tar.gz]
+    # name template makes the OS and Arch compatible with the results of `uname`.
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    # use zip for windows archives
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+homebrew_casks:
+  - name: mcpd
+    repository:
+      owner: mozilla-ai
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    license: Apache-2.0
+    homepage: https://github.com/mozilla-ai/mcpd
+    description: >
+      A tool to declaratively manage Model Context Protocol (MCP) servers,
+      providing a consistent interface to define and run tools across environments,
+      from local development to containerized cloud deployments.
+    directory: Casks
+    conflicts:
+      - formula: mcpd
+    # Only build for macOS and Linux (Homebrew standard)
+    ids:
+      - default
+    hooks:
+      post:
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/mcpd"]
+          end
+
+dockers:
+  - goarch: amd64
+    use: buildx
+    image_templates:
+    - "mzdotai/mcpd:{{ .Tag }}-amd64"
+    - "mzdotai/mcpd:latest-amd64"
+    build_flag_templates:
+      - "--pull"
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.version={{ .Tag }}"
+  - goarch: arm64
+    use: buildx
+    image_templates:
+      - "mzdotai/mcpd:{{ .Tag }}-arm64"
+      - "mzdotai/mcpd:latest-arm64"
+    build_flag_templates:
+      - "--pull"
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.version={{ .Tag }}"
+
+docker_manifests:
+  - name_template: "mzdotai/mcpd:{{ .Tag }}"
+    image_templates:
+      - "mzdotai/mcpd:{{ .Tag }}-amd64"
+      - "mzdotai/mcpd:{{ .Tag }}-arm64"
+  - name_template: "mzdotai/mcpd:latest"
+    image_templates:
+      - "mzdotai/mcpd:latest-amd64"
+      - "mzdotai/mcpd:latest-arm64"
+
+changelog:
+  disable: true
+
+release:
+  draft: true
+  replace_existing_draft: true
+  replace_existing_artifacts: false
+  prerelease: auto
+  footer: >-
+
+    ---
+
+    Released by [GoReleaser](https://github.com/goreleaser/goreleaser).

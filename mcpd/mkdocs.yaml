@@ -1,0 +1,51 @@
+site_name: mcpd documentation
+site_url: https://mozilla-ai.github.io/mcpd/
+repo_name: mozilla-ai/mcpd
+repo_url: https://github.com/mozilla-ai/mcpd
+docs_dir: docs
+extra_css:
+  - assets/custom.css
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: grey
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      accent: grey
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+  font:
+    text: Roboto
+    code: JetBrains Mono
+  features:
+    - navigation.instant
+    - navigation.sections
+    - toc.integrate
+  favicon: favicon.ico
+  logo: assets/mcpd.png
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - attr_list
+  - md_in_html
+  - pymdownx.blocks.caption
+  - toc:
+      permalink: true
+nav:
+  - Home: index.md
+  - Requirements: requirements.md
+  - Configuration: configuration.md
+  - Execution Context: execution-context.md
+  - Makefile: makefile.md
+  - Tutorial: tutorial.md
+  - CLI Reference:
+      - Overview: commands/mcpd.md
