@@ -5,7 +5,8 @@ from typing import List, Dict, Any, Optional
 import httpx
 import json
 import asyncio
-from anthropic import AsyncAnthropic
+# We'll use any-llm for all LLM calls instead of direct SDK
+# from anthropic import AsyncAnthropic  # No longer needed
 import os
 from dotenv import load_dotenv
 import tomli
@@ -14,6 +15,8 @@ from pathlib import Path
 from any_llm import completion
 import openai
 import subprocess
+# Removed tool_handler import since we'll simplify without Anthropic SDK
+# from app.tool_handler import handle_tool_use_response
 
 load_dotenv()
 
@@ -43,14 +46,7 @@ user_api_keys = {
     "ollama_host": OLLAMA_HOST
 }
 
-# Keep the anthropic client for tool usage
-anthropic_client = None
-if ANTHROPIC_API_KEY:
-    try:
-        anthropic_client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
-    except Exception as e:
-        print(f"Warning: Could not initialize Anthropic client: {e}")
-        anthropic_client = None
+# No longer need Anthropic client - using any-llm for everything
 
 
 class ChatMessage(BaseModel):
@@ -86,7 +82,7 @@ def get_available_models() -> ModelsResponse:
             provider="anthropic",
             requires_key=True,
             is_available=bool(user_api_keys.get("anthropic")),
-            supports_tools=True
+            supports_tools=True  # Supported via any-llm
         ),
         ModelInfo(
             id="anthropic/claude-opus-4-20250514",
@@ -94,7 +90,7 @@ def get_available_models() -> ModelsResponse:
             provider="anthropic",
             requires_key=True,
             is_available=bool(user_api_keys.get("anthropic")),
-            supports_tools=True
+            supports_tools=True  # Supported via any-llm
         ),
         ModelInfo(
             id="anthropic/claude-sonnet-4-20250514",
@@ -102,7 +98,7 @@ def get_available_models() -> ModelsResponse:
             provider="anthropic",
             requires_key=True,
             is_available=bool(user_api_keys.get("anthropic")),
-            supports_tools=True
+            supports_tools=True  # Supported via any-llm
         ),
         # Claude 3.7
         ModelInfo(
@@ -111,7 +107,7 @@ def get_available_models() -> ModelsResponse:
             provider="anthropic",
             requires_key=True,
             is_available=bool(user_api_keys.get("anthropic")),
-            supports_tools=True
+            supports_tools=True  # Supported via any-llm
         ),
         # Claude 3.5 models
         ModelInfo(
@@ -120,7 +116,7 @@ def get_available_models() -> ModelsResponse:
             provider="anthropic",
             requires_key=True,
             is_available=bool(user_api_keys.get("anthropic")),
-            supports_tools=True
+            supports_tools=True  # Supported via any-llm
         ),
         ModelInfo(
             id="anthropic/claude-3-5-sonnet-20240620",
@@ -128,7 +124,7 @@ def get_available_models() -> ModelsResponse:
             provider="anthropic",
             requires_key=True,
             is_available=bool(user_api_keys.get("anthropic")),
-            supports_tools=True
+            supports_tools=True  # Supported via any-llm
         ),
         ModelInfo(
             id="anthropic/claude-3-5-haiku-20241022",
@@ -136,7 +132,7 @@ def get_available_models() -> ModelsResponse:
             provider="anthropic",
             requires_key=True,
             is_available=bool(user_api_keys.get("anthropic")),
-            supports_tools=True
+            supports_tools=True  # Supported via any-llm
         ),
         # Claude 3 models
         ModelInfo(
@@ -145,7 +141,7 @@ def get_available_models() -> ModelsResponse:
             provider="anthropic",
             requires_key=True,
             is_available=bool(user_api_keys.get("anthropic")),
-            supports_tools=True
+            supports_tools=True  # Supported via any-llm
         ),
         # OpenAI GPT-5 models (Latest generation - August 2025)
         ModelInfo(
@@ -409,14 +405,13 @@ def get_available_models() -> ModelsResponse:
 @app.post("/update-keys")
 def update_api_keys(request: UpdateKeysRequest):
     """Update API keys for model providers"""
-    global user_api_keys, anthropic_client
+    global user_api_keys
     
     user_api_keys.update(request.keys)
     
     # Update environment variables for any-llm
     if "anthropic" in request.keys and request.keys["anthropic"]:
         os.environ["ANTHROPIC_API_KEY"] = request.keys["anthropic"]
-        anthropic_client = AsyncAnthropic(api_key=request.keys["anthropic"])
     if "openai" in request.keys and request.keys["openai"]:
         os.environ["OPENAI_API_KEY"] = request.keys["openai"]
     if "mistral" in request.keys and request.keys["mistral"]:
@@ -454,16 +449,41 @@ async def list_servers():
     return servers
 
 
+@app.get("/servers/{server_name}/auth-status")
+async def get_server_auth_status(server_name: str):
+    """Check authentication status for a server (stub for now)"""
+    # For Composio servers, we could check if the customerId is valid
+    # For now, just return authenticated for remote servers
+    if server_name in remote_mcp_servers:
+        config = remote_mcp_servers[server_name]
+        # Composio servers with customerId are considered authenticated
+        if "composio" in config.endpoint and "customerId=" in config.endpoint:
+            return {"authenticated": True, "type": "composio"}
+        # Other remote servers with tokens are authenticated
+        elif config.auth_token:
+            return {"authenticated": True, "type": "token"}
+        else:
+            return {"authenticated": False, "message": "No authentication configured"}
+    
+    # Local servers don't need authentication
+    return {"authenticated": True, "type": "local"}
+
 @app.get("/servers/{server_name}/tools")
 async def get_server_tools(server_name: str):
     """Get tools for a specific MCP server (local or remote)"""
     # Check if it's a remote server
     if server_name in remote_mcp_servers:
         config = remote_mcp_servers[server_name]
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             try:
                 headers = config.headers.copy()
-                if config.auth_token:
+                
+                # Check if it's Composio (they use SSE)
+                is_composio = "composio" in config.endpoint
+                if is_composio:
+                    headers["Accept"] = "application/json, text/event-stream"
+                    # Composio expects customerId in URL, not auth header
+                elif config.auth_token:
                     headers["Authorization"] = f"Bearer {config.auth_token}"
                 
                 # Call remote server's tool listing endpoint
@@ -473,13 +493,35 @@ async def get_server_tools(server_name: str):
                     json={"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 1}
                 )
                 response.raise_for_status()
-                result = response.json()
+                
+                # Handle Composio's SSE response
+                if is_composio and response.headers.get("content-type", "").startswith("text/event-stream"):
+                    # Parse SSE response
+                    text = response.text
+                    result = None
+                    for line in text.split('\n'):
+                        if line.startswith('data: '):
+                            data = line[6:]  # Remove 'data: ' prefix
+                            try:
+                                result = json.loads(data)
+                                break
+                            except:
+                                continue
+                    if not result:
+                        result = {"error": "Failed to parse SSE response"}
+                else:
+                    result = response.json()
                 
                 # Extract tools from JSON-RPC response
                 if "result" in result:
                     return {"tools": result["result"].get("tools", [])}
                 return {"tools": []}
             except httpx.HTTPError as e:
+                print(f"Error fetching tools from {server_name}: {e}")
+                print(f"Endpoint: {config.endpoint}")
+                print(f"Response status: {response.status_code if 'response' in locals() else 'N/A'}")
+                if 'response' in locals():
+                    print(f"Response text: {response.text[:500]}")
                 raise HTTPException(status_code=503, detail=f"Failed to get tools from remote server: {str(e)}")
     
     # Otherwise, it's a local server via mcpd
@@ -505,6 +547,9 @@ async def websocket_chat(websocket: WebSocket):
             model = data.get("model", "anthropic/claude-3-sonnet-20240229")
             api_keys = data.get("api_keys", {})
             
+            # Debug logging
+            print(f"Chat request - Model: {model}, Servers: {available_servers}")
+            
             # Update API keys if provided
             if api_keys:
                 for key, value in api_keys.items():
@@ -512,8 +557,6 @@ async def websocket_chat(websocket: WebSocket):
                         user_api_keys[key] = value
                         if key == "anthropic":
                             os.environ["ANTHROPIC_API_KEY"] = value
-                            global anthropic_client
-                            anthropic_client = AsyncAnthropic(api_key=value)
                         elif key == "openai":
                             os.environ["OPENAI_API_KEY"] = value
                         elif key == "mistral":
@@ -535,18 +578,38 @@ async def websocket_chat(websocket: WebSocket):
             if available_servers and model.startswith("anthropic/"):
                 for server in available_servers:
                     try:
-                        async with httpx.AsyncClient() as client:
-                            response = await client.get(f"{MCPD_BASE_URL}/servers/{server}/tools")
-                            if response.status_code == 200:
-                                server_tools = response.json().get("tools", [])
-                                for tool in server_tools:
-                                    tools.append({
-                                        "name": f"{server}__{tool['name']}",
-                                        "description": f"[{server}] {tool.get('description', '')}",
-                                        "input_schema": tool.get("inputSchema", {})
-                                    })
-                    except:
+                        # Check if it's a remote server or local
+                        if server in remote_mcp_servers:
+                            # Use the get_server_tools endpoint for remote servers
+                            response = await get_server_tools(server)
+                            server_tools = response.get("tools", [])
+                        else:
+                            # Local server via mcpd
+                            async with httpx.AsyncClient() as client:
+                                response = await client.get(f"{MCPD_BASE_URL}/servers/{server}/tools")
+                                if response.status_code == 200:
+                                    server_tools = response.json().get("tools", [])
+                                else:
+                                    server_tools = []
+                        
+                        print(f"Server {server}: Found {len(server_tools)} tools")
+                        
+                        for tool in server_tools:
+                            # Convert to OpenAI tools format
+                            tool_def = {
+                                "type": "function",
+                                "function": {
+                                    "name": f"{server}__{tool['name']}",
+                                    "description": f"[{server}] {tool.get('description', '')}",
+                                    "parameters": tool.get("inputSchema", {})
+                                }
+                            }
+                            tools.append(tool_def)
+                    except Exception as e:
+                        print(f"Error getting tools for {server}: {e}")
                         continue
+            
+            print(f"Total tools gathered: {len(tools)}")
             
             # Format messages for the model
             llm_messages = [
@@ -554,184 +617,193 @@ async def websocket_chat(websocket: WebSocket):
                 for msg in messages
             ]
             
-            # Call the model
+            # Call the model using any-llm for all providers
             try:
-                if tools and model.startswith("anthropic/"):
-                    # Use Anthropic client for tool-enabled calls
-                    if not anthropic_client:
-                        try:
-                            # Try to create client without any extra kwargs that might cause issues
-                            import inspect
-                            sig = inspect.signature(AsyncAnthropic.__init__)
-                            params = sig.parameters
-                            kwargs = {"api_key": user_api_keys["anthropic"]}
-                            anthropic_client = AsyncAnthropic(**kwargs)
-                        except Exception as e:
-                            await websocket.send_json({
-                                "type": "error",
-                                "message": f"Failed to initialize Anthropic client: {str(e)}"
-                            })
-                            continue
-                    
+                if tools:
                     await websocket.send_json({
                         "type": "status",
-                        "message": f"Using {model} with {len(tools)} tools from {len(available_servers)} servers"
+                        "message": f"Using {model} via any-llm with {len(tools)} tools"
+                    })
+                else:
+                    await websocket.send_json({
+                        "type": "status",
+                        "message": f"Using {model} via any-llm"
+                    })
+                
+                # Use any-llm for all model calls (with or without tools)
+                response = await asyncio.to_thread(
+                    completion,
+                    model=model,
+                    messages=llm_messages,
+                    tools=tools if tools else None,
+                    max_tokens=4096
+                )
+                
+                # Check if response contains tool calls
+                has_tool_calls = False
+                tool_calls = []
+                
+                if hasattr(response, 'choices') and len(response.choices) > 0:
+                    choice = response.choices[0]
+                    if hasattr(choice.message, 'tool_calls') and choice.message.tool_calls:
+                        has_tool_calls = True
+                        tool_calls = choice.message.tool_calls
+                        
+                if has_tool_calls:
+                    # Handle tool calls
+                    await websocket.send_json({
+                        "type": "status",
+                        "message": f"Executing {len(tool_calls)} tool(s)"
                     })
                     
-                    # Extract model name after "anthropic/"
-                    model_name = model.split("/")[1] if "/" in model else model
+                    # Add assistant message with tool calls to conversation
+                    tool_message = {
+                        "role": "assistant",
+                        "content": choice.message.content or "",
+                        "tool_calls": [
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc.function.name,
+                                    "arguments": tc.function.arguments
+                                }
+                            } for tc in tool_calls
+                        ]
+                    }
+                    llm_messages.append(tool_message)
                     
-                    try:
-                        response = await anthropic_client.messages.create(
-                            model=model_name,
-                            messages=llm_messages,
-                            max_tokens=4096,
-                            tools=tools if tools else None
-                        )
-                    except Exception as api_error:
-                        # If model doesn't exist or other API error, fall back to any-llm
-                        await websocket.send_json({
-                            "type": "status", 
-                            "message": f"Anthropic API error, trying with any-llm: {str(api_error)}"
-                        })
-                        
-                        response = await asyncio.to_thread(
-                            completion,
-                            model=model,
-                            messages=llm_messages
-                        )
-                        
-                        # Extract text content from response
-                        if hasattr(response, 'choices') and len(response.choices) > 0:
-                            response_text = response.choices[0].message.content
-                        elif hasattr(response, 'content'):
-                            if isinstance(response.content, list) and len(response.content) > 0:
-                                response_text = response.content[0].text if hasattr(response.content[0], 'text') else str(response.content[0])
-                            else:
-                                response_text = str(response.content)
-                        elif isinstance(response, str):
-                            response_text = response
+                    # Execute each tool
+                    for tool_call in tool_calls:
+                        # Parse server and tool name from the combined name
+                        full_name = tool_call.function.name
+                        if "__" in full_name:
+                            server_name, tool_name = full_name.split("__", 1)
                         else:
-                            response_text = str(response)
+                            server_name = "unknown"
+                            tool_name = full_name
+                            
+                        # Parse arguments
+                        try:
+                            arguments = json.loads(tool_call.function.arguments)
+                        except:
+                            arguments = {}
+                            
+                        await websocket.send_json({
+                            "type": "tool_call",
+                            "server": server_name,
+                            "tool": tool_name,
+                            "arguments": arguments
+                        })
+                        
+                        # Execute tool (check if remote or local)
+                        tool_result = {}
+                        if server_name in remote_mcp_servers:
+                            # Remote server execution
+                            config = remote_mcp_servers[server_name]
+                            async with httpx.AsyncClient(timeout=30.0) as client:
+                                try:
+                                    headers = config.headers.copy()
+                                    is_composio = "composio" in config.endpoint
+                                    
+                                    if is_composio:
+                                        headers["Accept"] = "application/json, text/event-stream"
+                                    elif config.auth_token:
+                                        headers["Authorization"] = f"Bearer {config.auth_token}"
+                                    
+                                    tool_response = await client.post(
+                                        config.endpoint,
+                                        headers=headers,
+                                        json={
+                                            "jsonrpc": "2.0",
+                                            "method": "tools/call",
+                                            "params": {
+                                                "name": tool_name,
+                                                "arguments": arguments
+                                            },
+                                            "id": 1
+                                        }
+                                    )
+                                    
+                                    # Handle Composio SSE response
+                                    if is_composio and tool_response.headers.get("content-type", "").startswith("text/event-stream"):
+                                        text = tool_response.text
+                                        result = None
+                                        for line in text.split('\n'):
+                                            if line.startswith('data: '):
+                                                data = line[6:]
+                                                try:
+                                                    result = json.loads(data)
+                                                    break
+                                                except:
+                                                    continue
+                                        if not result:
+                                            result = {"error": "Failed to parse SSE response"}
+                                    else:
+                                        result = tool_response.json()
+                                    
+                                    tool_result = result.get("result", {"error": "No result"})
+                                except Exception as e:
+                                    tool_result = {"error": str(e)}
+                        else:
+                            # Local server via mcpd
+                            async with httpx.AsyncClient() as client:
+                                try:
+                                    tool_response = await client.post(
+                                        f"{MCPD_BASE_URL}/servers/{server_name}/tools/{tool_name}",
+                                        json=arguments
+                                    )
+                                    tool_result = tool_response.json()
+                                except Exception as e:
+                                    tool_result = {"error": str(e)}
                         
                         await websocket.send_json({
-                            "type": "message",
-                            "role": "assistant",
-                            "content": response_text,
-                            "model": model
+                            "type": "tool_result",
+                            "server": server_name,
+                            "tool": tool_name,
+                            "result": tool_result
                         })
-                        continue
+                        
+                        # Add tool result to conversation
+                        llm_messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": json.dumps(tool_result)
+                        })
                     
-                    # Process Anthropic response with tools
+                    # Continue conversation with tool results
+                    final_response = await asyncio.to_thread(
+                        completion,
+                        model=model,
+                        messages=llm_messages,
+                        max_tokens=4096
+                    )
+                    
+                    # Send final response
+                    if hasattr(final_response, 'choices') and len(final_response.choices) > 0:
+                        final_text = final_response.choices[0].message.content
+                    else:
+                        final_text = str(final_response)
+                        
                     await websocket.send_json({
                         "type": "message",
                         "role": "assistant",
-                        "content": response.content[0].text if hasattr(response.content[0], 'text') else "",
+                        "content": final_text,
                         "model": model
                     })
-                    
-                    # Handle tool calls
-                    for content in response.content:
-                        if hasattr(content, 'type') and content.type == 'tool_use':
-                            server_name, tool_name = content.name.split("__", 1)
-                            
-                            await websocket.send_json({
-                                "type": "tool_call",
-                                "server": server_name,
-                                "tool": tool_name,
-                                "arguments": content.input
-                            })
-                            
-                            # Execute tool (check if remote or local)
-                            if server_name in remote_mcp_servers:
-                                # Remote server execution
-                                config = remote_mcp_servers[server_name]
-                                async with httpx.AsyncClient() as client:
-                                    try:
-                                        headers = config.headers.copy()
-                                        if config.auth_token:
-                                            headers["Authorization"] = f"Bearer {config.auth_token}"
-                                        
-                                        tool_response = await client.post(
-                                            config.endpoint,
-                                            headers=headers,
-                                            json={
-                                                "jsonrpc": "2.0",
-                                                "method": "tools/call",
-                                                "params": {
-                                                    "name": tool_name,
-                                                    "arguments": content.input
-                                                },
-                                                "id": 1
-                                            }
-                                        )
-                                        result = tool_response.json()
-                                        tool_result = result.get("result", {"error": "No result"})
-                                        
-                                        await websocket.send_json({
-                                            "type": "tool_result",
-                                            "server": server_name,
-                                            "tool": tool_name,
-                                            "result": tool_result
-                                        })
-                                    except Exception as e:
-                                        await websocket.send_json({
-                                            "type": "tool_result",
-                                            "server": server_name,
-                                            "tool": tool_name,
-                                            "result": {"error": str(e)}
-                                        })
-                            else:
-                                # Local server via mcpd
-                                async with httpx.AsyncClient() as client:
-                                    try:
-                                        tool_response = await client.post(
-                                            f"{MCPD_BASE_URL}/servers/{server_name}/tools/{tool_name}",
-                                            json=content.input
-                                        )
-                                        tool_result = tool_response.json()
-                                        
-                                        await websocket.send_json({
-                                            "type": "tool_result",
-                                            "server": server_name,
-                                            "tool": tool_name,
-                                            "result": tool_result
-                                        })
-                                    except Exception as e:
-                                        await websocket.send_json({
-                                            "type": "tool_result",
-                                            "server": server_name,
-                                            "tool": tool_name,
-                                            "result": {"error": str(e)}
-                                        })
                 else:
-                    # Use any-llm for non-tool calls
-                    await websocket.send_json({
-                        "type": "status",
-                        "message": f"Using {model} (no tool support)"
-                    })
-                    
-                    response = await asyncio.to_thread(
-                        completion,
-                        model=model,
-                        messages=llm_messages
-                    )
-                    
-                    # Extract text content from response
+                    # No tool calls, just send the message
+                    response_text = ""
                     if hasattr(response, 'choices') and len(response.choices) > 0:
-                        # OpenAI-style response
                         response_text = response.choices[0].message.content
                     elif hasattr(response, 'content'):
-                        # Anthropic-style response
                         if isinstance(response.content, list) and len(response.content) > 0:
                             response_text = response.content[0].text if hasattr(response.content[0], 'text') else str(response.content[0])
                         else:
                             response_text = str(response.content)
                     elif isinstance(response, str):
-                        # Direct string response
                         response_text = response
                     else:
-                        # Fallback - try to get any text we can
                         response_text = str(response)
                     
                     await websocket.send_json({
@@ -1161,18 +1233,28 @@ async def quick_add_server(request: QuickAddRequest):
         
         # Check for auth token in URL
         auth_token = None
-        if "token=" in input_str:
+        endpoint = input_str
+        
+        # For Composio, keep the customerId in the URL
+        if "composio" in input_str:
+            # Composio uses customerId in URL, not separate auth
+            # Keep the full URL including query parameters
+            endpoint = input_str
+        elif "token=" in input_str:
+            # Other services might use token parameter
             token_match = re.search(r'token=([^&]+)', input_str)
             if token_match:
                 auth_token = token_match.group(1)
-        elif "customerId=" in input_str:
-            # Composio-style URL
-            auth_token = input_str.split("customerId=")[1].split("&")[0]
+                # Remove token from URL for security
+                endpoint = input_str.split("?")[0]
+        else:
+            # For other services, use base URL
+            endpoint = input_str.split("?")[0]
         
         # Store remote server configuration
         remote_mcp_servers[server_name] = RemoteServerConfig(
             name=server_name,
-            endpoint=input_str.split("?")[0],  # Base URL without params
+            endpoint=endpoint,
             auth_token=auth_token,
             headers={"Content-Type": "application/json"}
         )
