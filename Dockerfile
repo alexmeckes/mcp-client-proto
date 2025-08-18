@@ -28,5 +28,5 @@ ENV CLOUD_MODE=true
 # Expose port (Railway will override PORT)
 EXPOSE 8000
 
-# Run the backend directly
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the backend directly using PORT from environment
+CMD sh -c "python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"
