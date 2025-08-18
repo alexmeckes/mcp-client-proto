@@ -55,7 +55,6 @@ build/
 mcpd.log
 mcpd-*.log
 .mcpd/
-mcpd/
 
 # Frontend build
 frontend/dist/
