@@ -9,3 +9,5 @@ tomli==2.0.1
 toml==0.10.2
 git+https://github.com/mozilla-ai/any-llm.git
 httpx-aiohttp>=0.1.8
+anthropic>=0.25.0
+openai>=1.0.0
