@@ -1327,8 +1327,30 @@ async def install_mcp_server(request: InstallServerRequest):
         print(f"Command stderr: {result.stderr}")
         print(f"Command return code: {result.returncode}")
         
-        if result.returncode != 0:
+        if result.returncode != 0 and "duplicate server name" not in result.stderr:
             raise HTTPException(status_code=500, detail=f"Failed to install server: {result.stderr}")
+        
+        # After adding the server, we need to configure its arguments
+        if request.args:
+            print(f"Configuring server {request.name} with args: {request.args}")
+            # Update the mcpd config file with arguments
+            config_path = Path("/root/.config/mcpd/config.toml")
+            if config_path.exists():
+                import toml
+                with open(config_path, 'r') as f:
+                    config = toml.load(f)
+                
+                # Find the server and add args
+                if "servers" in config:
+                    for server in config["servers"]:
+                        if server.get("name") == request.name:
+                            server["args"] = request.args
+                            break
+                
+                # Write back the config
+                with open(config_path, 'w') as f:
+                    toml.dump(config, f)
+                print(f"Updated config for server {request.name}")
         
         # If env vars are provided, save them to runtime config
         if request.env:
@@ -1365,6 +1387,29 @@ async def uninstall_mcp_server(server_name: str):
         
         return {"status": "success", "message": f"Server {server_name} uninstalled"}
         
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/remove-server/{name}")
+async def remove_server(name: str):
+    """Remove a server from mcpd config to fix issues"""
+    try:
+        config_path = Path("/root/.config/mcpd/config.toml")
+        if config_path.exists():
+            import toml
+            with open(config_path, 'r') as f:
+                config = toml.load(f)
+            
+            # Remove the server
+            if "servers" in config:
+                config["servers"] = [s for s in config["servers"] if s.get("name") != name]
+            
+            # Write back the config
+            with open(config_path, 'w') as f:
+                toml.dump(config, f)
+            
+            return {"status": "success", "message": f"Server {name} removed"}
+        return {"status": "error", "message": "Config file not found"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
