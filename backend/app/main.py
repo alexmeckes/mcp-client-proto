@@ -1309,12 +1309,12 @@ async def install_mcp_server(request: InstallServerRequest):
         
         # Build the mcpd add command
         print(f"Installing server {request.name} with package {request.package}")
-        cmd = [mcpd_cmd, "add", request.name, request.package]
+        # MCPD expects just the server name, not the full package
+        # The package is resolved from registry
+        cmd = [mcpd_cmd, "add", request.name]
         
-        # Add arguments if provided
-        if request.args:
-            for arg in request.args:
-                cmd.extend(["--arg", arg])
+        # TODO: After adding, we need to update the config with args
+        # Arguments are stored in the config file, not passed to add command
         
         # Run the command  
         project_root = Path(__file__).resolve().parents[2]
