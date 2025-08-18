@@ -17,6 +17,9 @@ import openai
 import subprocess
 # Removed tool_handler import since we'll simplify without Anthropic SDK
 # from app.tool_handler import handle_tool_use_response
+from app.composio_integration import ComposioIntegration
+from fastapi.responses import RedirectResponse, JSONResponse
+import uuid
 
 load_dotenv()
 
@@ -128,6 +131,75 @@ async def health_check():
         "status": "healthy",
         "mcpd_available": mcpd_available,
         "mcpd_url": MCPD_BASE_URL if mcpd_available else None
+    }
+
+# Initialize Composio integration
+composio = ComposioIntegration()
+
+class ComposioConnectRequest(BaseModel):
+    user_id: str
+    app_name: str
+    callback_url: Optional[str] = None
+
+@app.post("/composio/connect")
+async def composio_connect(request: ComposioConnectRequest):
+    """Initiate Composio connection for a specific app"""
+    if not composio.is_configured():
+        # If no API key, we can still use the direct MCP URLs with customer ID
+        mcp_url = composio.get_mcp_url_for_app(request.user_id, request.app_name)
+        return {
+            "mode": "direct",
+            "mcp_url": mcp_url,
+            "message": "Add this URL to your MCP servers using your Composio Customer ID"
+        }
+    
+    # Initiate OAuth connection through Composio
+    result = await composio.initiate_connection(
+        user_id=request.user_id,
+        app_name=request.app_name,
+        callback_url=request.callback_url
+    )
+    
+    if "error" in result:
+        return JSONResponse(status_code=400, content=result)
+    
+    return {
+        "mode": "oauth",
+        **result
+    }
+
+@app.get("/composio/connections/{user_id}")
+async def get_composio_connections(user_id: str):
+    """Get user's connected Composio apps"""
+    connections = await composio.get_user_connections(user_id)
+    return {"connections": connections}
+
+@app.get("/composio/tools/{user_id}")
+async def get_composio_tools(user_id: str, app_name: Optional[str] = None):
+    """Get available tools for user's connected apps"""
+    tools = await composio.get_available_tools(user_id, app_name)
+    return {"tools": tools}
+
+@app.post("/composio/add-mcp-server")
+async def add_composio_mcp_server(user_id: str, app_name: str):
+    """Add a Composio app as an MCP server using direct URL"""
+    # Generate the MCP URL
+    mcp_url = composio.get_mcp_url_for_app(user_id, app_name)
+    server_id = f"composio-{app_name}-{user_id[:8]}"
+    
+    # Add to remote servers
+    remote_servers[server_id] = {
+        "id": server_id,
+        "name": f"Composio {app_name.title()}",
+        "url": mcp_url,
+        "connected": False,
+        "tools": []
+    }
+    
+    return {
+        "server_id": server_id,
+        "url": mcp_url,
+        "added": True
     }
 
 @app.post("/refresh-mcpd")
