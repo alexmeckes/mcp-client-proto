@@ -29,7 +29,7 @@ except ImportError:
     ALLOWED_ORIGINS = ["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"]
     MCPD_ENABLED = os.getenv("MCPD_ENABLED", "true").lower() == "true"
     MCPD_BASE_URL = os.getenv("MCPD_BASE_URL", "http://localhost:8090/api/v1")
-    MCPD_HEALTH_CHECK_URL = os.getenv("MCPD_HEALTH_CHECK_URL", "http://localhost:8090/health")
+    MCPD_HEALTH_CHECK_URL = os.getenv("MCPD_HEALTH_CHECK_URL", "http://localhost:8090/api/v1/health")
 
 app.add_middleware(
     CORSMiddleware,
@@ -141,7 +141,7 @@ async def refresh_mcpd():
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             # Try the correct MCPD health endpoint
-            response = await client.get("http://localhost:8090/health")
+            response = await client.get("http://localhost:8090/api/v1/health")
             if response.status_code == 200:
                 mcpd_available = True
                 return {"status": "success", "message": "MCPD is now available", "mcpd_available": True}
