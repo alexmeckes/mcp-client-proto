@@ -30,7 +30,9 @@ RUN apt-get update && apt-get install -y \
 
 # Copy MCPD binary from builder
 COPY --from=mcpd-builder /build/mcpd/mcpd /usr/local/bin/mcpd
-RUN chmod +x /usr/local/bin/mcpd
+RUN chmod +x /usr/local/bin/mcpd && \
+    echo "Testing MCPD binary..." && \
+    /usr/local/bin/mcpd --version || echo "MCPD version check failed"
 
 # Install some common MCP servers globally
 RUN npm install -g \
@@ -52,8 +54,11 @@ RUN mkdir -p /data/mcpd /var/log/supervisor /data/users /root/.config/mcpd
 # Copy supervisor configuration
 COPY backend/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-# Initialize MCPD configuration
-RUN /usr/local/bin/mcpd init || true
+# Test and initialize MCPD
+RUN echo "Testing MCPD in Docker build..." && \
+    /usr/local/bin/mcpd --help && \
+    echo "MCPD help succeeded" && \
+    /usr/local/bin/mcpd init 2>&1 || echo "MCPD init returned: $?"
 
 # Set environment variables for Railway
 ENV PORT=8000
