@@ -11,10 +11,10 @@ ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://loc
 if os.getenv("FRONTEND_URL"):
     ALLOWED_ORIGINS.append(os.getenv("FRONTEND_URL"))
 
-# MCPD configuration - embedded in cloud deployment
-MCPD_ENABLED = os.getenv("MCPD_ENABLED", "true").lower() == "true"  # Default to true in cloud
-MCPD_BASE_URL = os.getenv("MCPD_BASE_URL", "http://localhost:8090/api/v1")
-MCPD_HEALTH_CHECK_URL = os.getenv("MCPD_HEALTH_CHECK_URL", "http://localhost:8090/api/v1/health")
+# MCPD removed - using remote servers only
+MCPD_ENABLED = False  # MCPD is no longer used
+MCPD_BASE_URL = None  # Not needed anymore
+MCPD_HEALTH_CHECK_URL = None  # Not needed anymore
 
 # API Keys (users will provide their own)
 REQUIRE_API_KEYS = os.getenv("REQUIRE_API_KEYS", "true").lower() == "true"

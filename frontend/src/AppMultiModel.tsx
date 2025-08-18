@@ -5,7 +5,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import ServerMarketplace from './ServerMarketplace'
+// import ServerMarketplace from './ServerMarketplace' // MCPD removed
 import QuickAddServer from './QuickAddServer'
 
 import { API_BASE, WS_BASE } from './config'
@@ -77,7 +77,7 @@ function AppMultiModel() {
   const [showApiKeyModal, setShowApiKeyModal] = useState(false)
   const [apiKeys, setApiKeys] = useState<ApiKeys>({})
   const [tempApiKeys, setTempApiKeys] = useState<ApiKeys>({})
-  const [showMarketplace, setShowMarketplace] = useState(false)
+  // const [showMarketplace, setShowMarketplace] = useState(false) // MCPD removed
 
   useEffect(() => {
     // Load saved preferences from localStorage
@@ -396,13 +396,13 @@ function AppMultiModel() {
         </div>
       )}
 
-      {/* Server Marketplace Modal */}
-      {showMarketplace && (
+      {/* Server Marketplace Modal - MCPD removed */}
+      {/* {showMarketplace && (
         <ServerMarketplace 
           onClose={() => setShowMarketplace(false)} 
           onServerInstalled={() => fetchServers()}
         />
-      )}
+      )} */}
 
       {/* API Keys Modal */}
       {showApiKeyModal && (
@@ -487,14 +487,15 @@ function AppMultiModel() {
               <p className="text-xs text-amber-600 mt-1">Tools disabled for {currentModel.provider}</p>
             )}
           </div>
-          <button
+          {/* MCPD Registry removed - only remote servers supported */}
+          {/* <button
             onClick={() => setShowMarketplace(true)}
             className="px-3 py-1 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 flex items-center gap-1" 
             title="Browse and install MCP servers"
           >
             <Package className="w-4 h-4" />
             Add Server
-          </button>
+          </button> */}
         </div>
         
         {/* Quick Add Server */}

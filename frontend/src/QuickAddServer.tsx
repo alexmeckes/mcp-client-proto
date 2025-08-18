@@ -24,10 +24,8 @@ export default function QuickAddServer({ onServerAdded }: QuickAddServerProps) {
     setSuccess(null)
 
     try {
-      const response = await axios.post(`${API_BASE}/quick-add-server`, {
-        input: input.trim(),
-        env: {},  // Could add UI for env vars if needed
-        args: []  // Could add UI for args if needed
+      const response = await axios.post(`${API_BASE}/add-remote-server`, {
+        input: input.trim()
       })
 
       setSuccess(response.data.message)
@@ -37,10 +35,7 @@ export default function QuickAddServer({ onServerAdded }: QuickAddServerProps) {
       // Clear success message after 3 seconds
       setTimeout(() => setSuccess(null), 3000)
 
-      // Restart mcpd if it's a local server
-      if (response.data.type === 'local') {
-        await axios.post(`${API_BASE}/restart-mcpd`)
-      }
+      // MCPD removed - no restart needed
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to add server')
     } finally {
@@ -51,11 +46,9 @@ export default function QuickAddServer({ onServerAdded }: QuickAddServerProps) {
   // Use useMemo to generate a stable placeholder that won't change on re-renders
   const placeholder = useMemo(() => {
     const examples = [
-      'https://mcp.composio.dev/supabase/mcp?customerId=...',
-      '@modelcontextprotocol/server-github',
-      'npm:@modelcontextprotocol/server-sqlite',
-      'filesystem',
-      'time'
+      'https://mcp.composio.dev/github/mcp?customerId=YOUR_ID',
+      'https://mcp.composio.dev/supabase/mcp?customerId=YOUR_ID',
+      'https://your-mcp-server.com/api/mcp'
     ]
     return examples[Math.floor(Math.random() * examples.length)]
   }, []) // Empty dependency array means this only runs once on mount
@@ -108,20 +101,17 @@ export default function QuickAddServer({ onServerAdded }: QuickAddServerProps) {
             <div className="flex items-start gap-2">
               <Globe className="w-3 h-3 mt-0.5 flex-shrink-0" />
               <div>
-                <span className="font-medium">Remote URL:</span> https://api.example.com/mcp
+                <span className="font-medium">Remote MCP Server URL:</span> https://mcp.composio.dev/github/mcp?customerId=...
               </div>
             </div>
             <div className="flex items-start gap-2">
-              <Package className="w-3 h-3 mt-0.5 flex-shrink-0" />
+              <Globe className="w-3 h-3 mt-0.5 flex-shrink-0" />
               <div>
-                <span className="font-medium">NPM Package:</span> @org/package or npm:package-name
+                <span className="font-medium">Composio Example:</span> https://mcp.composio.dev/supabase/mcp?customerId=YOUR_ID
               </div>
             </div>
-            <div className="flex items-start gap-2">
-              <Package className="w-3 h-3 mt-0.5 flex-shrink-0" />
-              <div>
-                <span className="font-medium">Registry Name:</span> filesystem, github, sqlite
-              </div>
+            <div className="text-amber-600 mt-2">
+              <strong>Note:</strong> MCPD has been removed. Only remote MCP servers (like Composio) are supported.
             </div>
           </div>
         </div>
