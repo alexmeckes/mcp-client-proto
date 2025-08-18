@@ -13,7 +13,7 @@ WORKDIR /build/mcpd
 ENV GOPROXY=https://proxy.golang.org,direct
 ENV GO111MODULE=on
 RUN go mod download || (cat go.mod && exit 1)
-RUN go build -o mcpd ./cmd
+RUN go build -o mcpd .
 
 # Main application stage
 FROM python:3.11-slim
