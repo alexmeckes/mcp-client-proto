@@ -130,6 +130,40 @@ async def health_check():
         "mcpd_url": MCPD_BASE_URL if mcpd_available else None
     }
 
+@app.get("/debug/mcpd")
+async def debug_mcpd():
+    """Debug endpoint to check MCPD status"""
+    import shutil
+    import subprocess
+    
+    mcpd_path = "/usr/local/bin/mcpd" if os.getenv("CLOUD_MODE") == "true" else "mcpd"
+    
+    debug_info = {
+        "cloud_mode": os.getenv("CLOUD_MODE"),
+        "mcpd_enabled": os.getenv("MCPD_ENABLED"),
+        "mcpd_path": mcpd_path,
+        "mcpd_exists": os.path.exists(mcpd_path) if "/" in mcpd_path else shutil.which(mcpd_path) is not None,
+        "mcpd_executable": os.access(mcpd_path, os.X_OK) if os.path.exists(mcpd_path) else False,
+        "mcpd_base_url": MCPD_BASE_URL,
+        "mcpd_available": mcpd_available
+    }
+    
+    # Try to check if mcpd is running
+    try:
+        result = subprocess.run(["pgrep", "-f", "mcpd"], capture_output=True, text=True)
+        debug_info["mcpd_processes"] = result.stdout.strip().split('\n') if result.stdout.strip() else []
+    except:
+        debug_info["mcpd_processes"] = []
+    
+    # Check supervisor status if available
+    try:
+        result = subprocess.run(["supervisorctl", "status"], capture_output=True, text=True)
+        debug_info["supervisor_status"] = result.stdout
+    except:
+        debug_info["supervisor_status"] = "supervisorctl not available"
+    
+    return debug_info
+
 
 class ChatMessage(BaseModel):
     role: str
