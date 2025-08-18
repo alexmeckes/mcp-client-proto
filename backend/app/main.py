@@ -144,7 +144,10 @@ class ComposioConnectRequest(BaseModel):
 @app.post("/composio/connect")
 async def composio_connect(request: ComposioConnectRequest):
     """Initiate Composio connection for a specific app"""
+    print(f"Composio connect request: user={request.user_id}, app={request.app_name}")
+    
     if not composio.is_configured():
+        print("Composio not configured, falling back to direct mode")
         # If no API key, we can still use the direct MCP URLs with customer ID
         mcp_url = composio.get_mcp_url_for_app(request.user_id, request.app_name)
         return {
@@ -153,6 +156,7 @@ async def composio_connect(request: ComposioConnectRequest):
             "message": "Add this URL to your MCP servers using your Composio Customer ID"
         }
     
+    print(f"Initiating OAuth connection for {request.app_name}")
     # Initiate OAuth connection through Composio
     result = await composio.initiate_connection(
         user_id=request.user_id,
@@ -161,8 +165,10 @@ async def composio_connect(request: ComposioConnectRequest):
     )
     
     if "error" in result:
+        print(f"Error initiating connection: {result['error']}")
         return JSONResponse(status_code=400, content=result)
     
+    print(f"Connection initiated successfully: {result.get('redirect_url', 'No URL')}")
     return {
         "mode": "oauth",
         **result

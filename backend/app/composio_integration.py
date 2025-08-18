@@ -57,7 +57,7 @@ class ComposioIntegration:
             
             return {
                 "redirect_url": connection_request.redirectUrl,
-                "connection_id": connection_request.connectionId,
+                "connection_id": connection_request.connectedAccountId if hasattr(connection_request, 'connectedAccountId') else None,
                 "user_id": user_id,
                 "app": app_name
             }
