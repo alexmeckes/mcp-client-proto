@@ -1234,8 +1234,11 @@ async def get_mcp_registry():
 async def install_mcp_server(request: InstallServerRequest):
     """Install an MCP server using mcpd add command"""
     try:
+        # Determine mcpd command path based on environment
+        mcpd_cmd = "/usr/local/bin/mcpd" if os.getenv("CLOUD_MODE") == "true" else "mcpd"
+        
         # Build the mcpd add command
-        cmd = ["mcpd", "add", request.name, request.package]
+        cmd = [mcpd_cmd, "add", request.name, request.package]
         
         # Add arguments if provided
         if request.args:
@@ -1297,7 +1300,8 @@ async def restart_mcpd():
         
         # Start mcpd daemon again - set working directory to project root
         project_root = Path(__file__).resolve().parents[2]
-        subprocess.Popen(["mcpd", "daemon", "--dev"], 
+        mcpd_cmd = "/usr/local/bin/mcpd" if os.getenv("CLOUD_MODE") == "true" else "mcpd"
+        subprocess.Popen([mcpd_cmd, "daemon", "--dev"], 
                         stdout=subprocess.DEVNULL, 
                         stderr=subprocess.DEVNULL,
                         cwd=str(project_root))
@@ -1370,7 +1374,8 @@ async def quick_add_server(request: QuickAddRequest):
         server_name = package.split("/")[-1].replace("@latest", "").replace("server-", "")
         
         # Install via mcpd
-        cmd = ["mcpd", "add", server_name, f"npx::{package}"]
+        mcpd_cmd = "/usr/local/bin/mcpd" if os.getenv("CLOUD_MODE") == "true" else "mcpd"
+        cmd = [mcpd_cmd, "add", server_name, f"npx::{package}"]
         if request.args:
             for arg in request.args:
                 cmd.extend(["--arg", arg])
@@ -1398,7 +1403,8 @@ async def quick_add_server(request: QuickAddRequest):
         server_name = input_str.split("/")[-1].replace("@latest", "").replace("server-", "")
         
         # Install via mcpd
-        cmd = ["mcpd", "add", server_name, package]
+        mcpd_cmd = "/usr/local/bin/mcpd" if os.getenv("CLOUD_MODE") == "true" else "mcpd"
+        cmd = [mcpd_cmd, "add", server_name, package]
         if request.args:
             for arg in request.args:
                 cmd.extend(["--arg", arg])
@@ -1425,7 +1431,8 @@ async def quick_add_server(request: QuickAddRequest):
         for server in MCP_SERVER_REGISTRY:
             if server.name == input_str:
                 # Install from registry
-                cmd = ["mcpd", "add", server.name, server.package]
+                mcpd_cmd = "/usr/local/bin/mcpd" if os.getenv("CLOUD_MODE") == "true" else "mcpd"
+                cmd = [mcpd_cmd, "add", server.name, server.package]
                 if request.args or server.example_args:
                     for arg in (request.args or server.example_args):
                         cmd.extend(["--arg", arg])
