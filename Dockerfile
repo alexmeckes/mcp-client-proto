@@ -1,5 +1,5 @@
 # Multi-stage build for MCPD and backend
-FROM golang:1.21-alpine AS mcpd-builder
+FROM golang:1.23-alpine AS mcpd-builder
 
 # Install build dependencies
 RUN apk add --no-cache git make
