@@ -1334,7 +1334,12 @@ async def install_mcp_server(request: InstallServerRequest):
         if request.args:
             print(f"Configuring server {request.name} with args: {request.args}")
             # MCPD uses a secrets.toml file for runtime args
-            secrets_path = Path("/root/.config/mcpd/secrets.toml")
+            # Try both paths - cloud mode uses /root, local mode uses user's home
+            if os.getenv("CLOUD_MODE") == "true":
+                secrets_path = Path("/root/.config/mcpd/secrets.toml")
+            else:
+                secrets_path = Path.home() / ".config" / "mcpd" / "secrets.toml"
+            
             secrets_path.parent.mkdir(parents=True, exist_ok=True)
             
             import toml
@@ -1343,19 +1348,20 @@ async def install_mcp_server(request: InstallServerRequest):
                 with open(secrets_path, 'r') as f:
                     secrets = toml.load(f)
             
-            # Add or update server args in secrets file
+            # MCPD expects the args directly under [servers.servername]
+            # Not nested under an "args" key
             if "servers" not in secrets:
                 secrets["servers"] = {}
-            if request.name not in secrets["servers"]:
-                secrets["servers"][request.name] = {}
             
-            # Set the args for the server
-            secrets["servers"][request.name]["args"] = request.args
+            # Create the server section with args list directly
+            secrets["servers"][request.name] = {
+                "args": request.args  # This is the correct format MCPD expects
+            }
             
             # Write back the secrets file
             with open(secrets_path, 'w') as f:
                 toml.dump(secrets, f)
-            print(f"Updated secrets.toml for server {request.name} with args: {request.args}")
+            print(f"Updated secrets.toml at {secrets_path} for server {request.name} with args: {request.args}")
         
         # If env vars are provided, save them to runtime config
         if request.env:
@@ -1394,6 +1400,37 @@ async def uninstall_mcp_server(server_name: str):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/debug/mcpd-config")
+async def debug_mcpd_config():
+    """Debug endpoint to see MCPD config files"""
+    import toml
+    result = {}
+    
+    # Check config.toml
+    config_path = Path("/root/.config/mcpd/config.toml")
+    if config_path.exists():
+        with open(config_path, 'r') as f:
+            result["config.toml"] = toml.load(f)
+    else:
+        result["config.toml"] = "Not found"
+    
+    # Check secrets.toml
+    secrets_path = Path("/root/.config/mcpd/secrets.toml")
+    if secrets_path.exists():
+        with open(secrets_path, 'r') as f:
+            result["secrets.toml"] = toml.load(f)
+    else:
+        result["secrets.toml"] = "Not found"
+    
+    # List all files in mcpd config dir
+    config_dir = Path("/root/.config/mcpd")
+    if config_dir.exists():
+        result["files"] = [str(f.relative_to(config_dir)) for f in config_dir.iterdir()]
+    else:
+        result["files"] = "Directory not found"
+    
+    return result
 
 @app.post("/remove-server/{name}")
 async def remove_server(name: str):
