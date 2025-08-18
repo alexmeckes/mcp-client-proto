@@ -54,11 +54,13 @@ RUN mkdir -p /data/mcpd /var/log/supervisor /data/users /root/.config/mcpd
 # Copy supervisor configuration
 COPY backend/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-# Test and initialize MCPD
-RUN echo "Testing MCPD in Docker build..." && \
-    /usr/local/bin/mcpd --help && \
-    echo "MCPD help succeeded" && \
-    /usr/local/bin/mcpd init 2>&1 || echo "MCPD init returned: $?"
+# Initialize MCPD configuration in root's home directory
+WORKDIR /root
+RUN echo "Initializing MCPD configuration..." && \
+    /usr/local/bin/mcpd init && \
+    echo "MCPD configuration initialized successfully" && \
+    ls -la /root/.config/mcpd/ || echo "Config directory not found"
+WORKDIR /app
 
 # Set environment variables for Railway
 ENV PORT=8000
