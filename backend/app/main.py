@@ -130,6 +130,26 @@ async def health_check():
         "mcpd_url": MCPD_BASE_URL if mcpd_available else None
     }
 
+@app.post("/refresh-mcpd")
+async def refresh_mcpd():
+    """Refresh MCPD availability status"""
+    global mcpd_available
+    
+    if not MCPD_ENABLED:
+        return {"status": "disabled", "message": "MCPD is disabled"}
+    
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            # Try the correct MCPD health endpoint
+            response = await client.get("http://localhost:8090/health")
+            if response.status_code == 200:
+                mcpd_available = True
+                return {"status": "success", "message": "MCPD is now available", "mcpd_available": True}
+    except Exception as e:
+        pass
+    
+    return {"status": "not_available", "message": "MCPD is not responding", "mcpd_available": False}
+
 @app.get("/debug/mcpd")
 async def debug_mcpd():
     """Debug endpoint to check MCPD status"""
@@ -137,6 +157,16 @@ async def debug_mcpd():
     import subprocess
     
     mcpd_path = "/usr/local/bin/mcpd" if os.getenv("CLOUD_MODE") == "true" else "mcpd"
+    
+    # Try to refresh MCPD status
+    global mcpd_available
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            response = await client.get(MCPD_HEALTH_CHECK_URL)
+            if response.status_code == 200:
+                mcpd_available = True
+    except:
+        pass
     
     debug_info = {
         "cloud_mode": os.getenv("CLOUD_MODE"),
