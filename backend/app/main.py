@@ -577,14 +577,19 @@ async def list_servers():
     # Get local servers from mcpd (only if available)
     if True:  # Changed from mcpd_available for testing
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                print(f"Trying to fetch servers from: {MCPD_BASE_URL}/servers")
                 response = await client.get(f"{MCPD_BASE_URL}/servers")
                 response.raise_for_status()
                 local_servers = response.json()
+                print(f"Got servers from MCPD: {local_servers}")
                 # Mark these as local servers
                 servers.extend([{"name": s, "type": "local"} for s in local_servers])
-        except httpx.HTTPError:
+        except httpx.HTTPError as e:
+            print(f"Failed to fetch servers from MCPD: {e}")
             pass  # mcpd might not be running
+        except Exception as e:
+            print(f"Unexpected error fetching servers: {e}")
     
     # Add remote servers
     for name, config in remote_mcp_servers.items():
@@ -1303,6 +1308,7 @@ async def install_mcp_server(request: InstallServerRequest):
         mcpd_cmd = "/usr/local/bin/mcpd" if os.getenv("CLOUD_MODE") == "true" else "mcpd"
         
         # Build the mcpd add command
+        print(f"Installing server {request.name} with package {request.package}")
         cmd = [mcpd_cmd, "add", request.name, request.package]
         
         # Add arguments if provided
@@ -1310,9 +1316,16 @@ async def install_mcp_server(request: InstallServerRequest):
             for arg in request.args:
                 cmd.extend(["--arg", arg])
         
-        # Run the command
+        # Run the command  
         project_root = Path(__file__).resolve().parents[2]
-        result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(project_root))
+        # In cloud mode, run from /root where mcpd config is
+        cwd = "/root" if os.getenv("CLOUD_MODE") == "true" else str(project_root)
+        print(f"Running command: {' '.join(cmd)} in directory: {cwd}")
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
+        
+        print(f"Command stdout: {result.stdout}")
+        print(f"Command stderr: {result.stderr}")
+        print(f"Command return code: {result.returncode}")
         
         if result.returncode != 0:
             raise HTTPException(status_code=500, detail=f"Failed to install server: {result.stderr}")
