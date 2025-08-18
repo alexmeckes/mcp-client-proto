@@ -1328,8 +1328,15 @@ async def uninstall_mcp_server(server_name: str):
 async def restart_mcpd():
     """Restart the mcpd daemon to pick up config changes"""
     try:
-        # Kill existing mcpd process
-        subprocess.run(["pkill", "-f", "mcpd daemon"], capture_output=True)
+        # Kill existing mcpd process (try pkill first, then supervisorctl)
+        try:
+            subprocess.run(["pkill", "-f", "mcpd daemon"], capture_output=True, check=False)
+        except FileNotFoundError:
+            # If pkill doesn't exist, try supervisorctl
+            try:
+                subprocess.run(["supervisorctl", "restart", "mcpd"], capture_output=True, check=False)
+            except:
+                pass
         await asyncio.sleep(1)
         
         # Start mcpd daemon again - set working directory to project root

@@ -25,6 +25,7 @@ RUN apt-get update && apt-get install -y \
     nodejs \
     npm \
     supervisor \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy MCPD binary from builder
@@ -46,19 +47,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ .
 
 # Create directories for MCPD data and logs
-RUN mkdir -p /data/mcpd /var/log/supervisor /data/users
+RUN mkdir -p /data/mcpd /var/log/supervisor /data/users /root/.config/mcpd
 
 # Copy supervisor configuration
 COPY backend/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-# Create MCPD config
-RUN echo '[mcpd]\n\
-port = 8090\n\
-data_dir = "/data/mcpd"\n\
-log_level = "info"\n\
-\n\
-[cors]\n\
-allowed_origins = ["*"]\n' > /data/mcpd/.mcpd.toml
+# Initialize MCPD configuration
+RUN /usr/local/bin/mcpd init --data-dir /data/mcpd || true
 
 # Set environment variables for Railway
 ENV PORT=8000
