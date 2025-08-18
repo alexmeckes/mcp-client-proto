@@ -186,24 +186,31 @@ async def get_composio_tools(user_id: str, app_name: Optional[str] = None):
     tools = await composio.get_available_tools(user_id, app_name)
     return {"tools": tools}
 
+class AddMCPServerRequest(BaseModel):
+    user_id: str
+    app_name: str
+
 @app.post("/composio/add-mcp-server")
-async def add_composio_mcp_server(user_id: str, app_name: str):
+async def add_composio_mcp_server(request: AddMCPServerRequest):
     """Add a Composio app as an MCP server using direct URL"""
-    # Generate the MCP URL
-    mcp_url = composio.get_mcp_url_for_app(user_id, app_name)
-    server_id = f"composio-{app_name}-{user_id[:8]}"
+    print(f"Adding MCP server for {request.app_name} for user {request.user_id}")
     
-    # Add to remote servers
-    remote_servers[server_id] = {
-        "id": server_id,
-        "name": f"Composio {app_name.title()}",
-        "url": mcp_url,
-        "connected": False,
-        "tools": []
-    }
+    # Generate the MCP URL
+    mcp_url = composio.get_mcp_url_for_app(request.user_id, request.app_name)
+    server_name = f"composio-{request.app_name}"
+    
+    # Add to remote MCP servers using the existing structure
+    remote_mcp_servers[server_name] = RemoteServerConfig(
+        name=server_name,
+        endpoint=mcp_url,
+        auth_token=None,
+        headers={"Content-Type": "application/json"}
+    )
+    
+    print(f"Added MCP server {server_name} with URL {mcp_url}")
     
     return {
-        "server_id": server_id,
+        "server_id": server_name,
         "url": mcp_url,
         "added": True
     }

@@ -111,22 +111,20 @@ export default function ComposioOAuthFlow({ onServerAdded }: ComposioOAuthFlowPr
   const handlePostConnection = async (appId: string) => {
     try {
       // Add the connected app as an MCP server
-      await axios.post(`${API_BASE}/composio/add-mcp-server`, {
+      const response = await axios.post(`${API_BASE}/composio/add-mcp-server`, {
         user_id: userId,
         app_name: appId
       })
 
-      // Get the MCP URL and add it as a remote server
-      const mcpUrl = `https://mcp.composio.dev/${appId}/mcp?customerId=${userId}`
-      await axios.post(`${API_BASE}/add-remote-server`, {
-        input: mcpUrl
-      })
-
-      setConnectedApps(prev => new Set([...prev, appId]))
-      onServerAdded()
-      
-      // Show success message
-      setError(null)
+      if (response.data.added) {
+        setConnectedApps(prev => new Set([...prev, appId]))
+        onServerAdded()
+        
+        // Show success message
+        setError(null)
+      } else {
+        throw new Error('Failed to add MCP server')
+      }
     } catch (err) {
       setError(`Connected to ${appId} but failed to add as MCP server`)
     }
