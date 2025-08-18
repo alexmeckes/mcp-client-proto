@@ -53,7 +53,7 @@ RUN mkdir -p /data/mcpd /var/log/supervisor /data/users /root/.config/mcpd
 COPY backend/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Initialize MCPD configuration
-RUN /usr/local/bin/mcpd init --data-dir /data/mcpd || true
+RUN /usr/local/bin/mcpd init || true
 
 # Set environment variables for Railway
 ENV PORT=8000
