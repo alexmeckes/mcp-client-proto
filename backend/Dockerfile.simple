@@ -1,0 +1,33 @@
+# Simple Dockerfile for testing - without building MCPD from source
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    supervisor \
+    && rm -rf /var/lib/apt/lists/*
+
+# For now, we'll skip MCPD and just run the backend
+# In production, you'd download or copy a pre-built MCPD binary
+
+WORKDIR /app
+
+# Copy and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Create directories
+RUN mkdir -p /data/mcpd /var/log/supervisor
+
+# For testing without MCPD
+ENV MCPD_ENABLED=false
+
+# Expose port
+EXPOSE 8000
+
+# Run the backend directly for now
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

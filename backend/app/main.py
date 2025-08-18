@@ -22,15 +22,22 @@ load_dotenv()
 
 app = FastAPI(title="MCP Test Client API - Multi-Model")
 
+# Import config if it exists, otherwise use defaults
+try:
+    from app.config import ALLOWED_ORIGINS, MCPD_ENABLED, MCPD_BASE_URL, MCPD_HEALTH_CHECK_URL
+except ImportError:
+    ALLOWED_ORIGINS = ["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"]
+    MCPD_ENABLED = os.getenv("MCPD_ENABLED", "true").lower() == "true"
+    MCPD_BASE_URL = os.getenv("MCPD_BASE_URL", "http://localhost:8090/api/v1")
+    MCPD_HEALTH_CHECK_URL = os.getenv("MCPD_HEALTH_CHECK_URL", "http://localhost:8090/health")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-MCPD_BASE_URL = os.getenv("MCPD_BASE_URL", "http://localhost:8090/api/v1")
 
 # API keys - now optional, users can provide them via UI
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
@@ -47,6 +54,81 @@ user_api_keys = {
 }
 
 # No longer need Anthropic client - using any-llm for everything
+
+# Track MCPD status
+mcpd_available = False
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Check if MCPD is available on startup"""
+    global mcpd_available
+    
+    if not MCPD_ENABLED:
+        print("MCPD is disabled in configuration")
+        return
+    
+    print(f"Checking MCPD availability at {MCPD_HEALTH_CHECK_URL}...")
+    
+    # Try to connect to MCPD with retries
+    for attempt in range(10):
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(MCPD_HEALTH_CHECK_URL)
+                if response.status_code == 200:
+                    mcpd_available = True
+                    print(f"✓ MCPD is available at {MCPD_BASE_URL}")
+                    
+                    # Try to install default servers if in cloud mode
+                    if os.getenv("CLOUD_MODE") == "true":
+                        await setup_default_servers()
+                    return
+        except Exception as e:
+            if attempt < 9:
+                print(f"Attempt {attempt + 1}/10: Waiting for MCPD... ({str(e)})")
+                await asyncio.sleep(2)
+            else:
+                print(f"✗ MCPD is not available: {str(e)}")
+                print("MCP server features will be disabled")
+
+
+async def setup_default_servers():
+    """Install default MCP servers in cloud mode"""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Install memory server
+            try:
+                response = await client.post(
+                    f"{MCPD_BASE_URL}/servers",
+                    json={"name": "@modelcontextprotocol/server-memory"}
+                )
+                if response.status_code in [200, 201]:
+                    print("✓ Installed memory MCP server")
+            except Exception as e:
+                print(f"Could not install memory server: {e}")
+            
+            # Install time server
+            try:
+                response = await client.post(
+                    f"{MCPD_BASE_URL}/servers",
+                    json={"name": "@modelcontextprotocol/server-time"}
+                )
+                if response.status_code in [200, 201]:
+                    print("✓ Installed time MCP server")
+            except Exception as e:
+                print(f"Could not install time server: {e}")
+    except Exception as e:
+        print(f"Error setting up default servers: {e}")
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for the backend"""
+    return {
+        "status": "healthy",
+        "mcpd_available": mcpd_available,
+        "mcpd_url": MCPD_BASE_URL if mcpd_available else None
+    }
 
 
 class ChatMessage(BaseModel):
@@ -427,16 +509,17 @@ async def list_servers():
     """List available MCP servers from both mcpd and remote sources"""
     servers = []
     
-    # Get local servers from mcpd
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"{MCPD_BASE_URL}/servers")
-            response.raise_for_status()
-            local_servers = response.json()
-            # Mark these as local servers
-            servers.extend([{"name": s, "type": "local"} for s in local_servers])
-    except httpx.HTTPError:
-        pass  # mcpd might not be running
+    # Get local servers from mcpd (only if available)
+    if mcpd_available:
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(f"{MCPD_BASE_URL}/servers")
+                response.raise_for_status()
+                local_servers = response.json()
+                # Mark these as local servers
+                servers.extend([{"name": s, "type": "local"} for s in local_servers])
+        except httpx.HTTPError:
+            pass  # mcpd might not be running
     
     # Add remote servers
     for name, config in remote_mcp_servers.items():
@@ -596,12 +679,17 @@ async def websocket_chat(websocket: WebSocket):
                         
                         for tool in server_tools:
                             # Convert to OpenAI tools format
+                            # Ensure parameters have properties field if type is object
+                            params = tool.get("inputSchema", {})
+                            if params.get("type") == "object" and "properties" not in params:
+                                params["properties"] = {}
+                            
                             tool_def = {
                                 "type": "function",
                                 "function": {
                                     "name": f"{server}__{tool['name']}",
                                     "description": f"[{server}] {tool.get('description', '')}",
-                                    "parameters": tool.get("inputSchema", {})
+                                    "parameters": params
                                 }
                             }
                             tools.append(tool_def)
@@ -631,13 +719,19 @@ async def websocket_chat(websocket: WebSocket):
                     })
                 
                 # Use any-llm for all model calls (with or without tools)
-                response = await asyncio.to_thread(
-                    completion,
-                    model=model,
-                    messages=llm_messages,
-                    tools=tools if tools else None,
-                    max_tokens=4096
-                )
+                try:
+                    response = await asyncio.to_thread(
+                        completion,
+                        model=model,
+                        messages=llm_messages,
+                        tools=tools if tools else None,
+                        max_tokens=4096
+                    )
+                except Exception as e:
+                    print(f"Error calling model: {e}")
+                    if tools:
+                        print(f"Tools passed: {json.dumps(tools[:1], indent=2)}")  # Print first tool for debugging
+                    raise
                 
                 # Check if response contains tool calls
                 has_tool_calls = False
@@ -1149,7 +1243,8 @@ async def install_mcp_server(request: InstallServerRequest):
                 cmd.extend(["--arg", arg])
         
         # Run the command
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        project_root = Path(__file__).resolve().parents[2]
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(project_root))
         
         if result.returncode != 0:
             raise HTTPException(status_code=500, detail=f"Failed to install server: {result.stderr}")
@@ -1200,10 +1295,12 @@ async def restart_mcpd():
         subprocess.run(["pkill", "-f", "mcpd daemon"], capture_output=True)
         await asyncio.sleep(1)
         
-        # Start mcpd daemon again
+        # Start mcpd daemon again - set working directory to project root
+        project_root = Path(__file__).resolve().parents[2]
         subprocess.Popen(["mcpd", "daemon", "--dev"], 
                         stdout=subprocess.DEVNULL, 
-                        stderr=subprocess.DEVNULL)
+                        stderr=subprocess.DEVNULL,
+                        cwd=str(project_root))
         await asyncio.sleep(2)
         
         return {"status": "success", "message": "mcpd restarted successfully"}
@@ -1278,7 +1375,8 @@ async def quick_add_server(request: QuickAddRequest):
             for arg in request.args:
                 cmd.extend(["--arg", arg])
         
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        project_root = Path(__file__).resolve().parents[2]
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(project_root))
         if result.returncode != 0:
             raise HTTPException(status_code=500, detail=f"Failed to install: {result.stderr}")
         
@@ -1305,7 +1403,8 @@ async def quick_add_server(request: QuickAddRequest):
             for arg in request.args:
                 cmd.extend(["--arg", arg])
         
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        project_root = Path(__file__).resolve().parents[2]
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(project_root))
         if result.returncode != 0:
             raise HTTPException(status_code=500, detail=f"Failed to install: {result.stderr}")
         
@@ -1331,7 +1430,12 @@ async def quick_add_server(request: QuickAddRequest):
                     for arg in (request.args or server.example_args):
                         cmd.extend(["--arg", arg])
                 
-                result = subprocess.run(cmd, capture_output=True, text=True)
+                print(f"Running command: {' '.join(cmd)}")
+                # Set working directory to project root
+                project_root = Path(__file__).resolve().parents[2]
+                result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(project_root))
+                print(f"Command output: {result.stdout}")
+                print(f"Command stderr: {result.stderr}")
                 if result.returncode != 0:
                     raise HTTPException(status_code=500, detail=f"Failed to install: {result.stderr}")
                 

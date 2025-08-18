@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Package, Download, Trash2, Settings, RefreshCw, Check, X, AlertCircle, Search, Filter, Loader2, ChevronRight } from 'lucide-react'
 import axios from 'axios'
-
-const API_BASE = 'http://localhost:8000'
+import { API_BASE } from './config'
 
 interface ServerInfo {
   name: string

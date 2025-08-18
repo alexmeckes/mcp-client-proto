@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
-import { Send, Server, Wrench, Bot, User, Loader2, AlertCircle, Settings, Save, Plus, X } from 'lucide-react'
+import { Send, Server, Wrench, Bot, User, Loader2, AlertCircle, Settings, Save, Plus, X, Copy, Check, Trash2, Search, Keyboard, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
 import axios from 'axios'
-
-const API_BASE = 'http://localhost:8000'
-const WS_BASE = 'ws://localhost:8000'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { API_BASE, WS_BASE } from './config'
 
 interface Message {
   role: 'user' | 'assistant' | 'system'
@@ -58,6 +60,12 @@ function App() {
   const [serverConfigs, setServerConfigs] = useState<Record<string, ServerConfigDetail>>({})
   const [envDrafts, setEnvDrafts] = useState<Record<string, Record<string, string>>>({})
   const [savingEnv, setSavingEnv] = useState<string | null>(null)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [serverFilter, setServerFilter] = useState('')
+  const [showShortcuts, setShowShortcuts] = useState(false)
+  const [autoScroll, setAutoScroll] = useState(true)
+  const [reconnectAttempt, setReconnectAttempt] = useState(0)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     fetchServers()
@@ -71,14 +79,17 @@ function App() {
   }, [])
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    if (autoScroll) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [messages, autoScroll])
 
   const fetchServers = async () => {
     try {
       const response = await axios.get(`${API_BASE}/servers`)
-      const serverList = response.data.map((name: string) => ({
-        name,
+      // Handle both string array and object array formats
+      const serverList = response.data.map((server: string | { name: string, type: string }) => ({
+        name: typeof server === 'string' ? server : server.name,
         selected: false,
         tools: []
       }))
@@ -241,7 +252,15 @@ function App() {
     
     ws.onclose = () => {
       setConnected(false)
-      setTimeout(() => connectWebSocket(), 3000)
+      setReconnectAttempt(prev => prev + 1)
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempt), 30000)
+      setTimeout(() => connectWebSocket(), delay)
+    }
+    
+    ws.onopen = () => {
+      setConnected(true)
+      setError(null)
+      setReconnectAttempt(0)
     }
     
     ws.onerror = (error) => {
@@ -251,6 +270,22 @@ function App() {
     }
     
     wsRef.current = ws
+  }
+
+  const copyToClipboard = async (text: string, id: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedId(id)
+      setTimeout(() => setCopiedId(null), 2000)
+    } catch (err) {
+      console.error('Failed to copy:', err)
+    }
+  }
+
+  const clearConversation = () => {
+    if (confirm('Are you sure you want to clear the conversation?')) {
+      setMessages([])
+    }
   }
 
   const sendMessage = () => {
@@ -280,14 +315,100 @@ function App() {
     }
   }
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setShowShortcuts(!showShortcuts)
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'l') {
+        e.preventDefault()
+        clearConversation()
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault()
+        sendMessage()
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === '/') {
+        e.preventDefault()
+        inputRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [showShortcuts, input, connected])
+
+  const filteredServers = servers.filter(s => 
+    s.name.toLowerCase().includes(serverFilter.toLowerCase())
+  )
+
+  const estimatedTokens = Math.ceil(input.length / 4)
+
   return (
     <div className="flex h-screen bg-gray-50">
+      {/* Keyboard Shortcuts Modal */}
+      {showShortcuts && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center" onClick={() => setShowShortcuts(false)}>
+          <div className="bg-white rounded-lg p-6 max-w-md" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Keyboard className="w-5 h-5" />
+              Keyboard Shortcuts
+            </h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Toggle this help</span>
+                <kbd className="px-2 py-1 bg-gray-100 rounded">⌘K</kbd>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Clear conversation</span>
+                <kbd className="px-2 py-1 bg-gray-100 rounded">⌘L</kbd>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Send message</span>
+                <kbd className="px-2 py-1 bg-gray-100 rounded">⌘Enter</kbd>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Focus input</span>
+                <kbd className="px-2 py-1 bg-gray-100 rounded">⌘/</kbd>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowShortcuts(false)}
+              className="mt-4 w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Sidebar */}
       <div className="w-96 bg-white border-r border-gray-200 p-4 overflow-y-auto">
-        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <Server className="w-5 h-5" />
-          MCP Servers
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <Server className="w-5 h-5" />
+            MCP Servers
+          </h2>
+          <button
+            onClick={() => setShowShortcuts(true)}
+            className="p-1 hover:bg-gray-100 rounded" 
+            title="Keyboard shortcuts (⌘K)"
+          >
+            <Keyboard className="w-4 h-4 text-gray-500" />
+          </button>
+        </div>
+        
+        {/* Server Filter */}
+        <div className="relative mb-4">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Filter servers..."
+            value={serverFilter}
+            onChange={(e) => setServerFilter(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
         
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-start gap-2">
@@ -297,10 +418,12 @@ function App() {
         )}
         
         <div className="space-y-2">
-          {servers.length === 0 ? (
-            <div className="text-gray-500 text-sm">No servers available</div>
+          {filteredServers.length === 0 ? (
+            <div className="text-gray-500 text-sm">
+              {servers.length === 0 ? 'No servers available' : 'No servers match filter'}
+            </div>
           ) : (
-            servers.map((server) => (
+            filteredServers.map((server) => (
               <div key={server.name} className="border rounded-lg overflow-hidden">
                 <button
                   onClick={() => toggleServer(server.name)}
@@ -451,16 +574,46 @@ function App() {
         
         <div className="mt-6 p-3 bg-gray-50 rounded-lg">
           <div className="flex items-center gap-2 text-sm">
-            <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`} />
+            <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500' : reconnectAttempt > 0 ? 'bg-yellow-500' : 'bg-red-500'}`} />
             <span className="text-gray-600">
-              {connected ? 'Connected' : 'Disconnected'}
+              {connected ? 'Connected' : reconnectAttempt > 0 ? `Reconnecting... (${reconnectAttempt})` : 'Disconnected'}
             </span>
+            {reconnectAttempt > 0 && (
+              <RefreshCw className="w-3 h-3 animate-spin text-gray-500" />
+            )}
           </div>
         </div>
       </div>
 
       {/* Chat Area */}
       <div className="flex-1 flex flex-col">
+        {/* Header Bar */}
+        <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={clearConversation}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Clear conversation (⌘L)"
+            >
+              <Trash2 className="w-4 h-4 text-gray-600" />
+            </button>
+            <span className="text-sm text-gray-500">
+              {messages.length} message{messages.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setAutoScroll(!autoScroll)}
+              className={`p-2 rounded-lg transition-colors ${
+                autoScroll ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-600'
+              }`}
+              title={autoScroll ? 'Auto-scroll enabled' : 'Auto-scroll disabled'}
+            >
+              {autoScroll ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+        
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.length === 0 ? (
@@ -493,7 +646,46 @@ function App() {
                       <Bot className="w-5 h-5 flex-shrink-0 mt-0.5" />
                     )}
                     <div className="flex-1">
-                      <div className="whitespace-pre-wrap">{message.content}</div>
+                      {message.role === 'assistant' ? (
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            code({node, inline, className, children, ...props}) {
+                              const match = /language-(\w+)/.exec(className || '')
+                              return !inline && match ? (
+                                <div className="relative group">
+                                  <SyntaxHighlighter
+                                    {...props}
+                                    style={vscDarkPlus}
+                                    language={match[1]}
+                                    PreTag="div"
+                                  >
+                                    {String(children).replace(/\n$/, '')}
+                                  </SyntaxHighlighter>
+                                  <button
+                                    onClick={() => copyToClipboard(String(children), `code-${index}-${match[1]}`)}
+                                    className="absolute top-2 right-2 p-1 bg-gray-700 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                                  >
+                                    {copiedId === `code-${index}-${match[1]}` ? (
+                                      <Check className="w-4 h-4" />
+                                    ) : (
+                                      <Copy className="w-4 h-4" />
+                                    )}
+                                  </button>
+                                </div>
+                              ) : (
+                                <code className="bg-gray-100 px-1 py-0.5 rounded text-sm" {...props}>
+                                  {children}
+                                </code>
+                              )
+                            }
+                          }}
+                        >
+                          {message.content}
+                        </ReactMarkdown>
+                      ) : (
+                        <div className="whitespace-pre-wrap">{message.content}</div>
+                      )}
                       
                       {message.toolCalls && message.toolCalls.length > 0 && (
                         <div className="mt-3 space-y-2">
@@ -507,8 +699,20 @@ function App() {
                                 Args: {JSON.stringify(toolCall.arguments)}
                               </div>
                               {toolCall.result && (
-                                <div className="text-xs mt-1 p-1 bg-white rounded">
-                                  Result: {JSON.stringify(toolCall.result)}
+                                <div className="text-xs mt-1 p-1 bg-white rounded relative group">
+                                  <div className="flex items-start justify-between">
+                                    <span>Result: {JSON.stringify(toolCall.result)}</span>
+                                    <button
+                                      onClick={() => copyToClipboard(JSON.stringify(toolCall.result, null, 2), `tool-${index}-${i}`)}
+                                      className="ml-2 p-1 hover:bg-gray-200 rounded"
+                                    >
+                                      {copiedId === `tool-${index}-${i}` ? (
+                                        <Check className="w-3 h-3 text-green-600" />
+                                      ) : (
+                                        <Copy className="w-3 h-3 text-gray-500" />
+                                      )}
+                                    </button>
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -539,15 +743,26 @@ function App() {
         {/* Input */}
         <div className="border-t border-gray-200 p-4 bg-white">
           <div className="flex gap-2">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-              placeholder="Type your message..."
-              disabled={!connected}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-            />
+            <div className="flex-1 relative">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault()
+                    sendMessage()
+                  }
+                }}
+                placeholder="Type your message... (⌘Enter to send)"
+                disabled={!connected}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 resize-none"
+                rows={3}
+              />
+              <div className="absolute bottom-2 right-2 text-xs text-gray-400">
+                {input.length} chars • ~{estimatedTokens} tokens
+              </div>
+            </div>
             <button
               onClick={sendMessage}
               disabled={!connected || !input.trim() || loading}

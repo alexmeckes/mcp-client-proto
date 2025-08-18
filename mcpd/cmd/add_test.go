@@ -47,16 +47,16 @@ func (f *fakeLoader) Load(_ string) (config.Modifier, error) {
 }
 
 type fakeRegistry struct {
-	pkg packages.Package
+	pkg packages.Server
 	err error
 }
 
-func (f *fakeRegistry) Resolve(_ string, _ ...options.ResolveOption) (packages.Package, error) {
+func (f *fakeRegistry) Resolve(_ string, _ ...options.ResolveOption) (packages.Server, error) {
 	return f.pkg, f.err
 }
 
-func (f *fakeRegistry) Search(_ string, _ map[string]string, _ ...options.SearchOption) ([]packages.Package, error) {
-	return []packages.Package{f.pkg}, f.err
+func (f *fakeRegistry) Search(_ string, _ map[string]string, _ ...options.SearchOption) ([]packages.Server, error) {
+	return []packages.Server{f.pkg}, f.err
 }
 
 func (f *fakeRegistry) ID() string {
@@ -72,20 +72,26 @@ func (f *fakeBuilder) Build() (registry.PackageProvider, error) {
 	return f.reg, f.err
 }
 
+// testIntPtr returns a pointer to an int
+func testIntPtr(t *testing.T, i int) *int {
+	t.Helper()
+	return &i
+}
+
 func TestAddCmd_Success(t *testing.T) {
 	cfg := &fakeConfig{}
-	pkg := packages.Package{
+	pkg := packages.Server{
 		ID:   "server1",
 		Name: "Server1",
 		Tools: []packages.Tool{
 			{Name: "toolA"},
 			{Name: "toolB"},
 		},
-		Version: "1.2.3",
 		Installations: map[runtime.Runtime]packages.Installation{
 			runtime.UVX: {
-				Command:     "uvx",
+				Runtime:     "uvx",
 				Package:     "mcp-server-1",
+				Version:     "1.2.3",
 				Recommended: true,
 			},
 		},
@@ -141,10 +147,9 @@ func TestAddCmd_RegistryFails(t *testing.T) {
 func TestAddCmd_BasicServerAdd(t *testing.T) {
 	o := &bytes.Buffer{}
 
-	pkg := packages.Package{
-		ID:      "testserver",
-		Name:    "testserver",
-		Version: "latest",
+	pkg := packages.Server{
+		ID:   "testserver",
+		Name: "testserver",
 		Tools: []packages.Tool{
 			{Name: "tool1"},
 			{Name: "tool2"},
@@ -152,8 +157,9 @@ func TestAddCmd_BasicServerAdd(t *testing.T) {
 		},
 		Installations: map[runtime.Runtime]packages.Installation{
 			"uvx": {
-				Command:     "uvx",
+				Runtime:     "uvx",
 				Package:     "mcp-server-testserver",
+				Version:     "latest",
 				Recommended: true,
 			},
 		},
@@ -191,26 +197,27 @@ func TestAddCmd_ServerWithArguments(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name                   string
-		pkg                    packages.Package
-		expectedRequiredEnvs   []string
-		expectedRequiredValues []string
-		expectedRequiredBools  []string
+		name                        string
+		pkg                         packages.Server
+		expectedRequiredEnvs        []string
+		expectedRequiredPositionals []string
+		expectedRequiredValues      []string
+		expectedRequiredBools       []string
 	}{
 		{
 			name: "server with all argument types",
-			pkg: packages.Package{
-				ID:      "github-server",
-				Name:    "GitHub Server",
-				Version: "1.0.0",
+			pkg: packages.Server{
+				ID:   "github-server",
+				Name: "GitHub Server",
 				Tools: []packages.Tool{
 					{Name: "create_repo"},
 					{Name: "list_repos"},
 				},
 				Installations: map[runtime.Runtime]packages.Installation{
 					runtime.UVX: {
-						Command:     "uvx",
+						Runtime:     "uvx",
 						Package:     "mcp-server-github",
+						Version:     "1.0.0",
 						Recommended: true,
 					},
 				},
@@ -229,17 +236,17 @@ func TestAddCmd_ServerWithArguments(t *testing.T) {
 		},
 		{
 			name: "server with only env vars",
-			pkg: packages.Package{
-				ID:      "db-server",
-				Name:    "Database Server",
-				Version: "2.0.0",
+			pkg: packages.Server{
+				ID:   "db-server",
+				Name: "Database Server",
 				Tools: []packages.Tool{
 					{Name: "query"},
 				},
 				Installations: map[runtime.Runtime]packages.Installation{
 					runtime.UVX: {
-						Command:     "uvx",
+						Runtime:     "uvx",
 						Package:     "mcp-server-db",
+						Version:     "2.0.0",
 						Recommended: true,
 					},
 				},
@@ -254,17 +261,17 @@ func TestAddCmd_ServerWithArguments(t *testing.T) {
 		},
 		{
 			name: "server with mixed value and bool args",
-			pkg: packages.Package{
-				ID:      "api-server",
-				Name:    "API Server",
-				Version: "3.0.0",
+			pkg: packages.Server{
+				ID:   "api-server",
+				Name: "API Server",
 				Tools: []packages.Tool{
 					{Name: "call_api"},
 				},
 				Installations: map[runtime.Runtime]packages.Installation{
 					runtime.UVX: {
-						Command:     "uvx",
+						Runtime:     "uvx",
 						Package:     "mcp-server-api",
+						Version:     "3.0.0",
 						Recommended: true,
 					},
 				},
@@ -281,17 +288,17 @@ func TestAddCmd_ServerWithArguments(t *testing.T) {
 		},
 		{
 			name: "server with no required arguments",
-			pkg: packages.Package{
-				ID:      "simple-server",
-				Name:    "Simple Server",
-				Version: "1.0.0",
+			pkg: packages.Server{
+				ID:   "simple-server",
+				Name: "Simple Server",
 				Tools: []packages.Tool{
 					{Name: "hello"},
 				},
 				Installations: map[runtime.Runtime]packages.Installation{
 					runtime.UVX: {
-						Command:     "uvx",
+						Runtime:     "uvx",
 						Package:     "mcp-server-simple",
+						Version:     "1.0.0",
 						Recommended: true,
 					},
 				},
@@ -301,7 +308,66 @@ func TestAddCmd_ServerWithArguments(t *testing.T) {
 					"--optional-value": {VariableType: packages.VariableTypeArg, Required: false},
 				},
 			},
-			// All empty since none are required
+		},
+		{
+			name: "server all kinds of required args and envs",
+			pkg: packages.Server{
+				ID:   "simple-server",
+				Name: "Simple Server",
+				Tools: []packages.Tool{
+					{
+						Name: "hello",
+					},
+				},
+				Installations: map[runtime.Runtime]packages.Installation{
+					runtime.UVX: {
+						Runtime:     "uvx",
+						Package:     "mcp-server-simple",
+						Version:     "1.0.0",
+						Recommended: true,
+					},
+				},
+				Arguments: packages.Arguments{
+					"REQUIRED_ENV": {
+						VariableType: packages.VariableTypeEnv,
+						Required:     true,
+					},
+					"OPTIONAL_ENV": {
+						VariableType: packages.VariableTypeEnv,
+						Required:     false,
+					},
+					"RequiredPositional1": {
+						VariableType: packages.VariableTypeArgPositional,
+						Position:     testIntPtr(t, 1),
+						Required:     true,
+					},
+					"OptionalPositional2": {
+						VariableType: packages.VariableTypeArgPositional,
+						Position:     testIntPtr(t, 2),
+						Required:     false,
+					},
+					"--required-value": {
+						VariableType: packages.VariableTypeArg,
+						Required:     true,
+					},
+					"--optional-value": {
+						VariableType: packages.VariableTypeArg,
+						Required:     false,
+					},
+					"--required-flag": {
+						VariableType: packages.VariableTypeArgBool,
+						Required:     true,
+					},
+					"--optional-flag": {
+						VariableType: packages.VariableTypeArgBool,
+						Required:     false,
+					},
+				},
+			},
+			expectedRequiredEnvs:        []string{"REQUIRED_ENV"},
+			expectedRequiredPositionals: []string{"RequiredPositional1"},
+			expectedRequiredValues:      []string{"--required-value"},
+			expectedRequiredBools:       []string{"--required-flag"},
 		},
 	}
 
@@ -328,6 +394,7 @@ func TestAddCmd_ServerWithArguments(t *testing.T) {
 			require.True(t, cfg.addCalled)
 			assert.Equal(t, tc.pkg.ID, cfg.entry.Name)
 			assert.ElementsMatch(t, tc.expectedRequiredEnvs, cfg.entry.RequiredEnvVars)
+			assert.ElementsMatch(t, tc.expectedRequiredPositionals, cfg.entry.RequiredPositionalArgs)
 			assert.ElementsMatch(t, tc.expectedRequiredValues, cfg.entry.RequiredValueArgs)
 			assert.ElementsMatch(t, tc.expectedRequiredBools, cfg.entry.RequiredBoolArgs)
 		})
@@ -415,21 +482,22 @@ func TestParseServerEntry(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name                   string
-		installations          map[runtime.Runtime]packages.Installation
-		supportedRuntimes      []runtime.Runtime
-		pkgName                string
-		pkgID                  string
-		availableTools         []string
-		requestedTools         []string
-		requestedRuntime       runtime.Runtime
-		arguments              packages.Arguments
-		isErrorExpected        bool
-		expectedErrorMessage   string
-		expectedPackageValue   string
-		expectedRequiredEnvs   []string
-		expectedRequiredValues []string
-		expectedRequiredBools  []string
+		name                        string
+		installations               map[runtime.Runtime]packages.Installation
+		supportedRuntimes           []runtime.Runtime
+		pkgName                     string
+		pkgID                       string
+		availableTools              []string
+		requestedTools              []string
+		requestedRuntime            runtime.Runtime
+		arguments                   packages.Arguments
+		isErrorExpected             bool
+		expectedErrorMessage        string
+		expectedPackageValue        string
+		expectedRequiredEnvs        []string
+		expectedRequiredPositionals []string
+		expectedRequiredValues      []string
+		expectedRequiredBools       []string
 	}{
 		{
 			name: "basic server with no arguments",
@@ -516,6 +584,37 @@ func TestParseServerEntry(t *testing.T) {
 			expectedRequiredValues: []string{"--endpoint", "--api-key"},
 		},
 		{
+			name: "server with positional and value args",
+			installations: map[runtime.Runtime]packages.Installation{
+				runtime.UVX: {
+					Package:     "mcp-server-files",
+					Recommended: true,
+				},
+			},
+			supportedRuntimes: []runtime.Runtime{runtime.UVX},
+			pkgName:           "files",
+			pkgID:             "files",
+			availableTools:    []string{"read", "write"},
+			requestedTools:    []string{"read"},
+			arguments: packages.Arguments{
+				"path": {
+					VariableType: packages.VariableTypeArgPositional,
+					Position:     testIntPtr(t, 1),
+					Required:     true,
+				},
+				"mode": {
+					VariableType: packages.VariableTypeArgPositional,
+					Position:     testIntPtr(t, 2),
+					Required:     true,
+				},
+				"--format":   {VariableType: packages.VariableTypeArg, Required: true},
+				"--encoding": {VariableType: packages.VariableTypeArg, Required: false},
+			},
+			expectedPackageValue:        "uvx::mcp-server-files@latest",
+			expectedRequiredPositionals: []string{"path", "mode"},
+			expectedRequiredValues:      []string{"--format"},
+		},
+		{
 			name: "server with only required bool args",
 			installations: map[runtime.Runtime]packages.Installation{
 				runtime.UVX: {
@@ -571,7 +670,7 @@ func TestParseServerEntry(t *testing.T) {
 			requestedTools:       []string{"convert_time"},
 			arguments:            packages.Arguments{},
 			isErrorExpected:      true,
-			expectedErrorMessage: "installation package name is missing for runtime 'docker'",
+			expectedErrorMessage: "installation server name is missing for runtime 'docker'",
 		},
 		{
 			name: "requested tool not found",
@@ -618,7 +717,7 @@ func TestParseServerEntry(t *testing.T) {
 				tools[i] = packages.Tool{Name: tool}
 			}
 
-			pkg := packages.Package{
+			pkg := packages.Server{
 				ID:            tc.pkgID,
 				Name:          tc.pkgName,
 				Tools:         tools,
@@ -626,7 +725,13 @@ func TestParseServerEntry(t *testing.T) {
 				Arguments:     tc.arguments,
 			}
 
-			entry, err := parseServerEntry(pkg, tc.requestedRuntime, tc.requestedTools, tc.supportedRuntimes)
+			opts := serverEntryOptions{
+				Runtime:           tc.requestedRuntime,
+				Tools:             tc.requestedTools,
+				SupportedRuntimes: tc.supportedRuntimes,
+				AllowDeprecated:   false,
+			}
+			entry, err := parseServerEntry(pkg, opts)
 
 			if tc.isErrorExpected {
 				require.Error(t, err)
@@ -634,12 +739,13 @@ func TestParseServerEntry(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				expected := config.ServerEntry{
-					Name:              tc.pkgID,
-					Package:           tc.expectedPackageValue,
-					Tools:             tc.requestedTools,
-					RequiredEnvVars:   tc.expectedRequiredEnvs,
-					RequiredValueArgs: tc.expectedRequiredValues,
-					RequiredBoolArgs:  tc.expectedRequiredBools,
+					Name:                   tc.pkgID,
+					Package:                tc.expectedPackageValue,
+					Tools:                  tc.requestedTools,
+					RequiredEnvVars:        tc.expectedRequiredEnvs,
+					RequiredPositionalArgs: tc.expectedRequiredPositionals,
+					RequiredValueArgs:      tc.expectedRequiredValues,
+					RequiredBoolArgs:       tc.expectedRequiredBools,
 				}
 				require.Equal(t, expected.Name, entry.Name)
 				require.Equal(t, expected.Package, entry.Package)

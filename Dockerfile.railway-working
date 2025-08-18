@@ -1,0 +1,53 @@
+# Production Dockerfile for Railway with embedded MCPD support
+FROM python:3.11
+
+# Install system dependencies including Go for building MCPD
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    wget \
+    supervisor \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Go
+RUN wget https://go.dev/dl/go1.21.0.linux-amd64.tar.gz && \
+    tar -C /usr/local -xzf go1.21.0.linux-amd64.tar.gz && \
+    rm go1.21.0.linux-amd64.tar.gz
+
+ENV PATH=$PATH:/usr/local/go/bin
+
+# Build MCPD
+WORKDIR /tmp/mcpd-build
+COPY mcpd/ .
+RUN go mod tidy && \
+    go build -o /usr/local/bin/mcpd ./cmd && \
+    chmod +x /usr/local/bin/mcpd
+
+# Set up Python environment
+WORKDIR /app
+
+# Copy and install Python dependencies
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY backend/ .
+
+# Create directories for MCPD
+RUN mkdir -p /data/mcpd /var/log/supervisor
+
+# Copy supervisor configuration
+COPY backend/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+# Set environment variables
+ENV PORT=8000
+ENV MCPD_ENABLED=true
+ENV CLOUD_MODE=true
+ENV PYTHONUNBUFFERED=1
+
+# Expose ports
+EXPOSE 8000 8090
+
+# Use supervisor to manage both processes
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

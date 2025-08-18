@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Send, Server, Wrench, Bot, User, Loader2, AlertCircle, Settings, Save, Plus, X, Copy, Check, Trash2, Search, Keyboard, ChevronDown, ChevronUp, RefreshCw, Key, Brain, Package, Globe, HardDrive } from 'lucide-react'
+import { Send, Server, Wrench, Bot, User, Loader2, AlertCircle, Settings, Save, Plus, X, Copy, Check, Trash2, Search, Keyboard, ChevronDown, ChevronUp, RefreshCw, Key, Brain, Package, Globe, HardDrive, Lock, Unlock, ExternalLink } from 'lucide-react'
 import axios from 'axios'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -8,8 +8,7 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import ServerMarketplace from './ServerMarketplace'
 import QuickAddServer from './QuickAddServer'
 
-const API_BASE = 'http://localhost:8000'
-const WS_BASE = 'ws://localhost:8000'
+import { API_BASE, WS_BASE } from './config'
 
 interface Message {
   role: 'user' | 'assistant' | 'system'
@@ -32,6 +31,12 @@ interface MCPServer {
   endpoint?: string
   selected: boolean
   tools?: any[]
+  authStatus?: {
+    authenticated: boolean
+    type: string
+    app?: string
+    error?: string
+  }
 }
 
 interface ModelInfo {
@@ -129,11 +134,34 @@ function AppMultiModel() {
     }
   }
 
+  const checkAuthStatus = async (serverName: string) => {
+    try {
+      const response = await axios.get(`${API_BASE}/servers/${serverName}/auth-status`)
+      return response.data
+    } catch (err) {
+      console.error(`Failed to check auth status for ${serverName}:`, err)
+      return null
+    }
+  }
+
   const toggleServer = async (serverName: string) => {
     const updatedServers = await Promise.all(
       servers.map(async (server) => {
         if (server.name === serverName) {
           const newSelected = !server.selected
+          
+          // Check auth status for remote servers
+          if (server.type === 'remote' && !server.authStatus) {
+            const authStatus = await checkAuthStatus(serverName)
+            server.authStatus = authStatus
+          }
+          
+          // For Composio servers, check if authenticated before allowing selection
+          if (newSelected && server.authStatus?.type === 'composio' && !server.authStatus.authenticated) {
+            setError(`Please authenticate with ${server.authStatus.app} first`)
+            return { ...server, selected: false }
+          }
+          
           if (newSelected && !server.tools?.length) {
             try {
               const response = await axios.get(`${API_BASE}/servers/${serverName}/tools`)
@@ -309,10 +337,7 @@ function AppMultiModel() {
         e.preventDefault()
         clearConversation()
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        e.preventDefault()
-        sendMessage()
-      }
+      // Removed global Cmd/Ctrl+Enter handler - now using Enter key in textarea
       if ((e.metaKey || e.ctrlKey) && e.key === '/') {
         e.preventDefault()
         inputRef.current?.focus()
@@ -350,7 +375,11 @@ function AppMultiModel() {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Send message</span>
-                <kbd className="px-2 py-1 bg-gray-100 rounded">⌘Enter</kbd>
+                <kbd className="px-2 py-1 bg-gray-100 rounded">Enter</kbd>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">New line in message</span>
+                <kbd className="px-2 py-1 bg-gray-100 rounded">Shift+Enter</kbd>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Focus input</span>
@@ -449,67 +478,27 @@ function AppMultiModel() {
       {/* Sidebar */}
       <div className="w-96 bg-white border-r border-gray-200 p-4 overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Server className="w-5 h-5" />
-            MCP Servers
-          </h2>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowMarketplace(true)}
-              className="px-3 py-1 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 flex items-center gap-1" 
-              title="Browse and install MCP servers"
-            >
-              <Package className="w-4 h-4" />
-              Add Server
-            </button>
-            <button
-              onClick={() => setShowApiKeyModal(true)}
-              className="p-1 hover:bg-gray-100 rounded" 
-              title="API Keys"
-            >
-              <Key className="w-4 h-4 text-gray-500" />
-            </button>
-            <button
-              onClick={() => setShowShortcuts(true)}
-              className="p-1 hover:bg-gray-100 rounded" 
-              title="Keyboard shortcuts (⌘K)"
-            >
-              <Keyboard className="w-4 h-4 text-gray-500" />
-            </button>
+          <div>
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <Server className="w-5 h-5" />
+              MCP Servers
+            </h2>
+            {currentModel && !currentModel.supports_tools && (
+              <p className="text-xs text-amber-600 mt-1">Tools disabled for {currentModel.provider}</p>
+            )}
           </div>
+          <button
+            onClick={() => setShowMarketplace(true)}
+            className="px-3 py-1 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 flex items-center gap-1" 
+            title="Browse and install MCP servers"
+          >
+            <Package className="w-4 h-4" />
+            Add Server
+          </button>
         </div>
         
         {/* Quick Add Server */}
         <QuickAddServer onServerAdded={fetchServers} />
-        
-        {/* Model Selector */}
-        <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-          <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-            <Brain className="w-4 h-4" />
-            Model
-          </label>
-          <select
-            value={selectedModel}
-            onChange={(e) => handleModelChange(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-          >
-            {models.map(model => (
-              <option 
-                key={model.id} 
-                value={model.id}
-                disabled={!model.is_available}
-              >
-                {model.name} {!model.is_available && '(API key required)'}
-                {model.supports_tools && ' 🔧'}
-              </option>
-            ))}
-          </select>
-          {currentModel && !currentModel.supports_tools && (
-            <p className="mt-2 text-xs text-amber-600">
-              ⚠️ This model doesn't support MCP tools
-            </p>
-          )}
-        </div>
         
         {/* Server Filter */}
         <div className="relative mb-4">
@@ -547,11 +536,23 @@ function AppMultiModel() {
                 >
                   <div className="flex items-center gap-2">
                     {server.type === 'remote' ? (
-                      <Globe className="w-4 h-4 text-blue-500" title="Remote server" />
+                      <>
+                        <Globe className="w-4 h-4 text-blue-500" title="Remote server" />
+                        {server.authStatus?.type === 'composio' && (
+                          server.authStatus.authenticated ? (
+                            <Unlock className="w-3 h-3 text-green-500" title="Authenticated" />
+                          ) : (
+                            <Lock className="w-3 h-3 text-amber-500" title="Authentication required" />
+                          )
+                        )}
+                      </>
                     ) : (
                       <HardDrive className="w-4 h-4 text-gray-500" title="Local server" />
                     )}
                     <span className="font-medium">{server.name}</span>
+                    {server.authStatus?.app && (
+                      <span className="text-xs text-gray-400">({server.authStatus.app})</span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     {server.tools && server.tools.length > 0 && (
@@ -568,6 +569,67 @@ function AppMultiModel() {
                     />
                   </div>
                 </button>
+                
+                {/* Show auth prompt for unauthenticated Composio servers */}
+                {server.authStatus?.type === 'composio' && !server.authStatus.authenticated && (
+                  <div className="px-3 py-2 bg-amber-50 border-t border-amber-200">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-amber-700 flex items-center gap-1">
+                        <Lock className="w-3 h-3" />
+                        Authentication required for {server.authStatus.app}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={async () => {
+                            const newAuthStatus = await checkAuthStatus(server.name)
+                            setServers(prev => prev.map(s => 
+                              s.name === server.name ? {...s, authStatus: newAuthStatus} : s
+                            ))
+                          }}
+                          className="px-2 py-1 bg-gray-200 text-gray-700 text-xs rounded hover:bg-gray-300 flex items-center gap-1"
+                          title="Check authentication status"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                        </button>
+                        <button
+                        onClick={async () => {
+                          try {
+                            const response = await axios.post(`${API_BASE}/servers/${server.name}/initiate-auth`, {})
+                            console.log('Auth response:', response.data)
+                            
+                            // Check for redirect URL in the response
+                            const redirectUrl = response.data.data?.response_data?.redirect_url || 
+                                              response.data.data?.redirect_url ||
+                                              response.data.redirect_url
+                            
+                            if (redirectUrl) {
+                              window.open(redirectUrl, '_blank')
+                              setError(`Please complete authentication in the opened window for ${server.authStatus?.app}`)
+                              
+                              // After a delay, refresh auth status
+                              setTimeout(async () => {
+                                const newAuthStatus = await checkAuthStatus(server.name)
+                                setServers(prev => prev.map(s => 
+                                  s.name === server.name ? {...s, authStatus: newAuthStatus} : s
+                                ))
+                              }, 5000)
+                            } else {
+                              setError(`Authentication initiated for ${server.authStatus?.app}. ${response.data.data?.response_data?.message || ''}`)
+                            }
+                          } catch (err: any) {
+                            console.error('Auth error:', err)
+                            setError(`Failed to initiate authentication: ${err.response?.data?.detail || err.message}`)
+                          }
+                        }}
+                        className="px-2 py-1 bg-amber-600 text-white text-xs rounded hover:bg-amber-700 flex items-center gap-1"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        Authenticate
+                      </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 
                 {server.selected && server.tools && server.tools.length > 0 && (
                   <div className="px-3 pb-3 pt-1 border-t bg-gray-50">
@@ -611,44 +673,105 @@ function AppMultiModel() {
       {/* Chat Area */}
       <div className="flex-1 flex flex-col">
         {/* Header Bar */}
-        <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={clearConversation}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              title="Clear conversation (⌘L)"
-            >
-              <Trash2 className="w-4 h-4 text-gray-600" />
-            </button>
-            <span className="text-sm text-gray-500">
-              {messages.length} message{messages.length !== 1 ? 's' : ''}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">
-              {currentModel?.name || 'No model selected'}
-            </span>
-            <button
-              onClick={() => setAutoScroll(!autoScroll)}
-              className={`p-2 rounded-lg transition-colors ${
-                autoScroll ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-600'
-              }`}
-              title={autoScroll ? 'Auto-scroll enabled' : 'Auto-scroll disabled'}
-            >
-              {autoScroll ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
-            </button>
+        <div className="bg-white border-b border-gray-200 px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={clearConversation}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Clear conversation (⌘L)"
+              >
+                <Trash2 className="w-4 h-4 text-gray-600" />
+              </button>
+              <span className="text-sm text-gray-500">
+                {messages.length} message{messages.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+            
+            {/* Model Selector moved to header */}
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Brain className="w-4 h-4 text-gray-500" />
+                <select
+                  value={selectedModel}
+                  onChange={(e) => handleModelChange(e.target.value)}
+                  className="px-3 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm min-w-[200px]"
+                >
+                  {models.map(model => (
+                    <option 
+                      key={model.id} 
+                      value={model.id}
+                      disabled={!model.is_available}
+                    >
+                      {model.name} {!model.is_available && '(needs key)'}
+                    </option>
+                  ))}
+                </select>
+                {currentModel && !currentModel.is_available && (
+                  <button
+                    onClick={() => setShowApiKeyModal(true)}
+                    className="p-1.5 bg-amber-100 hover:bg-amber-200 rounded-lg transition-colors"
+                    title="API key required"
+                  >
+                    <AlertCircle className="w-4 h-4 text-amber-600" />
+                  </button>
+                )}
+                {currentModel && currentModel.is_available && (
+                  <button
+                    onClick={() => setShowApiKeyModal(true)}
+                    className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                    title="Manage API keys"
+                  >
+                    <Key className="w-4 h-4 text-gray-500" />
+                  </button>
+                )}
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowShortcuts(true)}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors" 
+                  title="Keyboard shortcuts (⌘K)"
+                >
+                  <Keyboard className="w-4 h-4 text-gray-500" />
+                </button>
+                
+                <button
+                  onClick={() => setAutoScroll(!autoScroll)}
+                  className={`p-2 rounded-lg transition-colors ${
+                    autoScroll ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-600'
+                  }`}
+                  title={autoScroll ? 'Auto-scroll enabled' : 'Auto-scroll disabled'}
+                >
+                  {autoScroll ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
         
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {/* Warning if model doesn't support tools but servers are selected */}
+          {currentModel && !currentModel.supports_tools && servers.some(s => s.selected) && (
+            <div className="mx-auto max-w-2xl mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <div>
+                <span className="font-medium">{currentModel.name}</span> doesn't support MCP tools. 
+                Selected servers won't be available. Switch to a Claude model to use tools.
+              </div>
+            </div>
+          )}
+          
           {messages.length === 0 ? (
             <div className="flex items-center justify-center h-full text-gray-400">
               <div className="text-center">
                 <Bot className="w-12 h-12 mx-auto mb-4" />
                 <p>Start a conversation with {currentModel?.name || 'your selected model'}</p>
-                {currentModel?.supports_tools && (
+                {currentModel?.supports_tools ? (
                   <p className="text-sm mt-2">Select MCP servers from the sidebar to enable tools</p>
+                ) : (
+                  <p className="text-sm mt-2 text-amber-600">This model doesn't support MCP tools</p>
                 )}
               </div>
             </div>
@@ -780,12 +903,12 @@ function AppMultiModel() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault()
                     sendMessage()
                   }
                 }}
-                placeholder={`Ask ${currentModel?.name || 'the model'} anything... (⌘Enter to send)`}
+                placeholder={`Ask ${currentModel?.name || 'the model'} anything... (Enter to send, Shift+Enter for new line)`}
                 disabled={!connected || !currentModel?.is_available}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 resize-none"
                 rows={3}

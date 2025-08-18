@@ -135,7 +135,7 @@ func TestSearchCmd_Run_UnexpectedFormat(t *testing.T) {
 }
 
 func TestSearchCmd_DefaultFormat(t *testing.T) {
-	pkg := packages.Package{
+	pkg := packages.Server{
 		ID:          "test-server",
 		Name:        "Test Server",
 		Description: "A test server",
@@ -144,7 +144,11 @@ func TestSearchCmd_DefaultFormat(t *testing.T) {
 		Tools: []packages.Tool{
 			{Name: "test_tool"},
 		},
-		Runtimes: []runtime.Runtime{runtime.UVX},
+		Installations: packages.Installations{
+			runtime.UVX: packages.Installation{
+				Runtime: "test-server",
+			},
+		},
 	}
 
 	o := new(bytes.Buffer)
@@ -163,11 +167,11 @@ func TestSearchCmd_DefaultFormat(t *testing.T) {
 	outStr := o.String()
 	assert.Contains(t, outStr, "🔎 Registry search results...")
 	assert.Contains(t, outStr, "🆔 test-server")
-	assert.Contains(t, outStr, "📦 Found 1 package")
+	assert.Contains(t, outStr, "📦 Found 1 server")
 }
 
 func TestSearchCmd_TextFormat(t *testing.T) {
-	pkg := packages.Package{
+	pkg := packages.Server{
 		ID:          "test-server",
 		Name:        "Test Server",
 		Description: "A test server",
@@ -176,7 +180,11 @@ func TestSearchCmd_TextFormat(t *testing.T) {
 		Tools: []packages.Tool{
 			{Name: "test_tool"},
 		},
-		Runtimes: []runtime.Runtime{runtime.UVX},
+		Installations: packages.Installations{
+			runtime.UVX: packages.Installation{
+				Runtime: "test-server",
+			},
+		},
 	}
 
 	o := new(bytes.Buffer)
@@ -195,11 +203,11 @@ func TestSearchCmd_TextFormat(t *testing.T) {
 	outStr := o.String()
 	assert.Contains(t, outStr, "🔎 Registry search results...")
 	assert.Contains(t, outStr, "🆔 test-server")
-	assert.Contains(t, outStr, "📦 Found 1 package")
+	assert.Contains(t, outStr, "📦 Found 1 server")
 }
 
 func TestSearchCmd_JSONFormat(t *testing.T) {
-	pkg := packages.Package{
+	pkg := packages.Server{
 		ID:          "test-server",
 		Name:        "Test Server",
 		Description: "A test server",
@@ -208,7 +216,11 @@ func TestSearchCmd_JSONFormat(t *testing.T) {
 		Tools: []packages.Tool{
 			{Name: "test_tool"},
 		},
-		Runtimes: []runtime.Runtime{runtime.UVX},
+		Installations: packages.Installations{
+			runtime.UVX: packages.Installation{
+				Runtime: "test-server",
+			},
+		},
 	}
 
 	o := new(bytes.Buffer)
@@ -224,7 +236,7 @@ func TestSearchCmd_JSONFormat(t *testing.T) {
 	err = cmdObj.Execute()
 	require.NoError(t, err)
 
-	var result output.ResultsPayload[packages.Package]
+	var result output.ResultsPayload[packages.Server]
 	err = json.Unmarshal(o.Bytes(), &result)
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -243,7 +255,7 @@ func TestSearchCmd_JSONFormat_EmptyResults(t *testing.T) {
 	o := new(bytes.Buffer)
 	cmdObj, err := NewSearchCmd(
 		&cmd.BaseCmd{},
-		cmdopts.WithRegistryBuilder(&fakeBuilder{reg: &fakeRegistryMultiple{packages: []packages.Package{}}}),
+		cmdopts.WithRegistryBuilder(&fakeBuilder{reg: &fakeRegistryMultiple{packages: []packages.Server{}}}),
 	)
 	require.NoError(t, err)
 
@@ -254,7 +266,7 @@ func TestSearchCmd_JSONFormat_EmptyResults(t *testing.T) {
 	require.NoError(t, err)
 
 	result := struct {
-		Results []packages.Package `json:"results"`
+		Results []packages.Server `json:"results"`
 	}{}
 	err = json.Unmarshal(o.Bytes(), &result)
 	require.NoError(t, err)
@@ -263,7 +275,7 @@ func TestSearchCmd_JSONFormat_EmptyResults(t *testing.T) {
 }
 
 func TestSearchCmd_JSONFormat_MultipleResults(t *testing.T) {
-	pkg1 := packages.Package{
+	pkg1 := packages.Server{
 		ID:          "server1",
 		Name:        "Server 1",
 		Description: "First server",
@@ -272,10 +284,14 @@ func TestSearchCmd_JSONFormat_MultipleResults(t *testing.T) {
 		Tools: []packages.Tool{
 			{Name: "tool1"},
 		},
-		Runtimes: []runtime.Runtime{runtime.UVX},
+		Installations: packages.Installations{
+			runtime.UVX: packages.Installation{
+				Runtime: "test-server",
+			},
+		},
 	}
 
-	pkg2 := packages.Package{
+	pkg2 := packages.Server{
 		ID:          "server2",
 		Name:        "Server 2",
 		Description: "Second server",
@@ -284,10 +300,14 @@ func TestSearchCmd_JSONFormat_MultipleResults(t *testing.T) {
 		Tools: []packages.Tool{
 			{Name: "tool2"},
 		},
-		Runtimes: []runtime.Runtime{runtime.Docker},
+		Installations: packages.Installations{
+			runtime.Docker: packages.Installation{
+				Runtime: "test-server",
+			},
+		},
 	}
 
-	fakeReg := &fakeRegistryMultiple{packages: []packages.Package{pkg1, pkg2}}
+	fakeReg := &fakeRegistryMultiple{packages: []packages.Server{pkg1, pkg2}}
 
 	output := new(bytes.Buffer)
 	cmdObj, err := NewSearchCmd(
@@ -303,7 +323,7 @@ func TestSearchCmd_JSONFormat_MultipleResults(t *testing.T) {
 	require.NoError(t, err)
 
 	result := struct {
-		Results []packages.Package `json:"results"`
+		Results []packages.Server `json:"results"`
 	}{}
 	err = json.Unmarshal(output.Bytes(), &result)
 	require.NoError(t, err)
@@ -331,7 +351,7 @@ func TestSearchCmd_InvalidFormat(t *testing.T) {
 }
 
 func TestSearchCmd_CaseInsensitiveFormat(t *testing.T) {
-	pkg := packages.Package{
+	pkg := packages.Server{
 		ID:          "test-server",
 		Name:        "Test Server",
 		Description: "A test server",
@@ -340,7 +360,11 @@ func TestSearchCmd_CaseInsensitiveFormat(t *testing.T) {
 		Tools: []packages.Tool{
 			{Name: "test_tool"},
 		},
-		Runtimes: []runtime.Runtime{runtime.UVX},
+		Installations: packages.Installations{
+			runtime.UVX: packages.Installation{
+				Runtime: "test-server",
+			},
+		},
 	}
 
 	testCases := []struct {
@@ -383,7 +407,7 @@ func TestSearchCmd_CaseInsensitiveFormat(t *testing.T) {
 
 			if tc.expectJSON {
 				result := struct {
-					Results []packages.Package `json:"results"`
+					Results []packages.Server `json:"results"`
 				}{}
 				err = json.Unmarshal(o.Bytes(), &result)
 				require.NoError(t, err)
@@ -393,7 +417,7 @@ func TestSearchCmd_CaseInsensitiveFormat(t *testing.T) {
 				outStr := o.String()
 				assert.Contains(t, outStr, "🔎 Registry search results...")
 				assert.Contains(t, outStr, "🆔 test-server")
-				assert.Contains(t, outStr, "📦 Found 1 package")
+				assert.Contains(t, outStr, "📦 Found 1 server")
 			}
 		})
 	}
@@ -445,7 +469,7 @@ func TestSearchCmd_JSONFormat_SearchError(t *testing.T) {
 }
 
 func TestSearchCmd_TextFormat_NoResults(t *testing.T) {
-	fakeReg := &fakeRegistryMultiple{packages: []packages.Package{}}
+	fakeReg := &fakeRegistryMultiple{packages: []packages.Server{}}
 
 	o := new(bytes.Buffer)
 	cmdObj, err := NewSearchCmd(
@@ -465,7 +489,7 @@ func TestSearchCmd_TextFormat_NoResults(t *testing.T) {
 }
 
 func TestSearchCmd_FlagsWithJSONFormat(t *testing.T) {
-	pkg := packages.Package{
+	pkg := packages.Server{
 		ID:          "test-server",
 		Name:        "Test Server",
 		Description: "A test server",
@@ -474,7 +498,11 @@ func TestSearchCmd_FlagsWithJSONFormat(t *testing.T) {
 		Tools: []packages.Tool{
 			{Name: "test_tool"},
 		},
-		Runtimes: []runtime.Runtime{runtime.UVX},
+		Installations: packages.Installations{
+			runtime.UVX: packages.Installation{
+				Runtime: "test-server",
+			},
+		},
 	}
 
 	o := new(bytes.Buffer)
@@ -491,7 +519,7 @@ func TestSearchCmd_FlagsWithJSONFormat(t *testing.T) {
 	require.NoError(t, err)
 
 	result := struct {
-		Results []packages.Package `json:"results"`
+		Results []packages.Server `json:"results"`
 	}{}
 	err = json.Unmarshal(o.Bytes(), &result)
 	require.NoError(t, err)
@@ -501,7 +529,7 @@ func TestSearchCmd_FlagsWithJSONFormat(t *testing.T) {
 }
 
 func TestSearchCmd_WildcardSearch(t *testing.T) {
-	pkg := packages.Package{
+	pkg := packages.Server{
 		ID:          "test-server",
 		Name:        "Test Server",
 		Description: "A test server",
@@ -510,7 +538,11 @@ func TestSearchCmd_WildcardSearch(t *testing.T) {
 		Tools: []packages.Tool{
 			{Name: "test_tool"},
 		},
-		Runtimes: []runtime.Runtime{runtime.UVX},
+		Installations: packages.Installations{
+			runtime.UVX: packages.Installation{
+				Runtime: "test-server",
+			},
+		},
 	}
 
 	o := new(bytes.Buffer)
@@ -527,7 +559,7 @@ func TestSearchCmd_WildcardSearch(t *testing.T) {
 	require.NoError(t, err)
 
 	result := struct {
-		Results []packages.Package `json:"results"`
+		Results []packages.Server `json:"results"`
 	}{}
 	err = json.Unmarshal(o.Bytes(), &result)
 	require.NoError(t, err)
@@ -538,22 +570,22 @@ func TestSearchCmd_WildcardSearch(t *testing.T) {
 
 // fakeRegistryMultiple supports returning multiple packages
 type fakeRegistryMultiple struct {
-	packages []packages.Package
+	packages []packages.Server
 	err      error
 }
 
-func (f *fakeRegistryMultiple) Resolve(_ string, _ ...options.ResolveOption) (packages.Package, error) {
+func (f *fakeRegistryMultiple) Resolve(_ string, _ ...options.ResolveOption) (packages.Server, error) {
 	if len(f.packages) > 0 {
 		return f.packages[0], f.err
 	}
-	return packages.Package{}, f.err
+	return packages.Server{}, f.err
 }
 
 func (f *fakeRegistryMultiple) Search(
 	_ string,
 	_ map[string]string,
 	_ ...options.SearchOption,
-) ([]packages.Package, error) {
+) ([]packages.Server, error) {
 	return f.packages, f.err
 }
 

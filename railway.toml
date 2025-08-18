@@ -1,0 +1,22 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile.railway-no-mcpd"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 60
+numReplicas = 1
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+[[services]]
+name = "mcp-backend"
+
+[services.domains]
+"mcp-backend.up.railway.app" = {}
+
+[[services.envs]]
+PORT = "8000"
+MCPD_ENABLED = "true"
+CLOUD_MODE = "true"
+ALLOWED_ORIGINS = "https://*.vercel.app,http://localhost:3000,http://localhost:5173,http://localhost:5174"

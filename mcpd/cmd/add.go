@@ -28,6 +28,7 @@ type AddCmd struct {
 	Runtime         string
 	Source          string
 	Format          internalcmd.OutputFormat
+	AllowDeprecated bool
 	cfgLoader       config.Loader
 	packagePrinter  output.Printer[config.ServerEntry]
 	registryBuilder registry.Builder
@@ -60,7 +61,7 @@ func NewAddCmd(baseCmd *internalcmd.BaseCmd, opt ...cmdopts.CmdOption) (*cobra.C
 	cobraCommand.Flags().StringVar(
 		&c.Version,
 		"version",
-		"latest",
+		"",
 		"Specify the version of the server package",
 	)
 
@@ -75,14 +76,14 @@ func NewAddCmd(baseCmd *internalcmd.BaseCmd, opt ...cmdopts.CmdOption) (*cobra.C
 		&c.Runtime,
 		"runtime",
 		"",
-		"Optional, specify the runtime of the server package (e.g. `uvx`, `npx`)",
+		"Optional, specify the runtime of the server (e.g. uvx, npx)",
 	)
 
 	cobraCommand.Flags().StringVar(
 		&c.Source,
 		"source",
 		"",
-		"Optional, specify the source registry of the server package (e.g. `mcpm`)",
+		"Optional, specify the source registry of the server (e.g. mozilla-ai)",
 	)
 
 	allowed := internalcmd.AllowedOutputFormats()
@@ -92,7 +93,22 @@ func NewAddCmd(baseCmd *internalcmd.BaseCmd, opt ...cmdopts.CmdOption) (*cobra.C
 		fmt.Sprintf("Specify the output format (one of: %s)", allowed.String()),
 	)
 
+	cobraCommand.Flags().BoolVar(
+		&c.AllowDeprecated,
+		"allow-deprecated",
+		false,
+		"Optional, allows server installations marked as deprecated to be added",
+	)
+
 	return cobraCommand, nil
+}
+
+// serverEntryOptions contains configuration for parsing a server entry
+type serverEntryOptions struct {
+	Runtime           runtime.Runtime
+	Tools             []string
+	SupportedRuntimes []runtime.Runtime
+	AllowDeprecated   bool
 }
 
 // run is configured (via NewAddCmd) to be called by the Cobra framework when the command is executed.
@@ -122,7 +138,7 @@ func (c *AddCmd) run(cmd *cobra.Command, args []string) error {
 	pkg, err := reg.Resolve(name, c.options()...)
 	if err != nil {
 		logger.Warn(
-			"package retrieval from registry failed",
+			"server retrieval from registry failed",
 			"name", name,
 			"version", c.Version,
 			"tools", strings.Join(c.Tools, ","),
@@ -131,16 +147,22 @@ func (c *AddCmd) run(cmd *cobra.Command, args []string) error {
 			"error", err,
 		)
 		return handler.HandleError(fmt.Errorf(
-			"⚠️ Failed to get package '%s@%s' from registry: %w",
+			"⚠️ Failed to get server '%s@%s' from registry: %w",
 			name,
 			c.Version,
 			err),
 		)
 	}
 
-	entry, err := parseServerEntry(pkg, runtime.Runtime(c.Runtime), c.Tools, c.MCPDSupportedRuntimes())
+	opts := serverEntryOptions{
+		Runtime:           runtime.Runtime(c.Runtime),
+		Tools:             c.Tools,
+		SupportedRuntimes: c.MCPDSupportedRuntimes(),
+		AllowDeprecated:   c.AllowDeprecated,
+	}
+	entry, err := parseServerEntry(pkg, opts)
 	if err != nil {
-		return handler.HandleError(fmt.Errorf("error parsing server entry: %w", err))
+		return handler.HandleError(err)
 	}
 
 	cfg, err := c.cfgLoader.Load(flags.ConfigFile)
@@ -208,54 +230,66 @@ func selectRuntime(
 	return "", fmt.Errorf("no supported runtimes found")
 }
 
-func parseServerEntry(
-	pkg packages.Package,
-	requestedRuntime runtime.Runtime,
-	requestedTools []string,
-	supportedRuntimes []runtime.Runtime,
-) (config.ServerEntry, error) {
-	requestedTools, err := filter.MatchRequestedSlice(requestedTools, pkg.Tools.Names())
+func parseServerEntry(pkg packages.Server, opts serverEntryOptions) (config.ServerEntry, error) {
+	requestedTools, err := filter.MatchRequestedSlice(opts.Tools, pkg.Tools.Names())
 	if err != nil {
 		return config.ServerEntry{}, fmt.Errorf("error matching requested tools: %w", err)
 	}
 
-	selectedRuntime, runtimeErr := selectRuntime(pkg.Installations, requestedRuntime, supportedRuntimes)
-	if runtimeErr != nil {
-		return config.ServerEntry{}, fmt.Errorf("error selecting runtime from available installations: %w", runtimeErr)
+	selectedRuntime, err := selectRuntime(pkg.Installations, opts.Runtime, opts.SupportedRuntimes)
+	if err != nil {
+		return config.ServerEntry{}, fmt.Errorf("error selecting runtime from available installations: %w", err)
 	}
 
-	v := "latest"
-	if pkg.Version != "" {
-		v = pkg.Version
-	}
-
-	runtimeSpecificName := pkg.Installations[selectedRuntime].Package
-	if runtimeSpecificName == "" {
+	installation, ok := pkg.Installations[selectedRuntime]
+	if !ok {
 		return config.ServerEntry{}, fmt.Errorf(
-			"installation package name is missing for runtime '%s'",
+			"installation not found for runtime '%s'",
 			selectedRuntime,
 		)
 	}
-	runtimePackageVersion := fmt.Sprintf("%s::%s@%s", selectedRuntime, runtimeSpecificName, v)
 
-	envs := packages.FilterArguments(pkg.Arguments, packages.EnvVar, packages.Required)
-	args := packages.FilterArguments(pkg.Arguments, packages.ValueArgument, packages.Required)
-	boolArgs := packages.FilterArguments(pkg.Arguments, packages.BoolArgument, packages.Required)
+	if installation.Deprecated && !opts.AllowDeprecated {
+		return config.ServerEntry{}, fmt.Errorf(
+			"server '%s' with runtime '%s' is deprecated, use --allow-deprecated flag to proceed",
+			pkg.ID,
+			selectedRuntime,
+		)
+	}
+
+	if installation.Package == "" {
+		return config.ServerEntry{}, fmt.Errorf(
+			"installation server name is missing for runtime '%s'",
+			selectedRuntime,
+		)
+	}
+
+	version := "latest"
+	if installation.Version != "" {
+		version = installation.Version
+	}
+
+	runtimePackageVersion := fmt.Sprintf("%s::%s@%s", selectedRuntime, installation.Package, version)
+	envs := pkg.Arguments.FilterBy(packages.Required, packages.EnvVar).Names()
+	positionalArgs := pkg.Arguments.FilterBy(packages.Required, packages.PositionalArgument).Ordered().Names()
+	valueArgs := pkg.Arguments.FilterBy(packages.Required, packages.ValueArgument).Ordered().Names()
+	boolArgs := pkg.Arguments.FilterBy(packages.Required, packages.BoolArgument).Names()
 
 	return config.ServerEntry{
-		Name:              pkg.ID,
-		Package:           runtimePackageVersion,
-		Tools:             requestedTools,
-		RequiredValueArgs: args.Names(),
-		RequiredBoolArgs:  boolArgs.Names(),
-		RequiredEnvVars:   envs.Names(),
+		Name:                   pkg.ID,
+		Package:                runtimePackageVersion,
+		Tools:                  requestedTools,
+		RequiredPositionalArgs: positionalArgs,
+		RequiredValueArgs:      valueArgs,
+		RequiredBoolArgs:       boolArgs,
+		RequiredEnvVars:        envs,
 	}, nil
 }
 
 func (c *AddCmd) options() []regopts.ResolveOption {
 	var o []regopts.ResolveOption
 
-	if c.Version != "" && c.Version != "latest" {
+	if c.Version != "" {
 		o = append(o, regopts.WithResolveVersion(c.Version))
 	}
 	if c.Runtime != "" {

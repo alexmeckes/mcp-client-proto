@@ -17,8 +17,9 @@ import (
 	"github.com/mozilla-ai/mcpd/v2/internal/runtime"
 )
 
-// intPtr returns a pointer to an int
-func intPtr(i int) *int {
+// testIntPtr returns a pointer to an int
+func testIntPtr(t *testing.T, i int) *int {
+	t.Helper()
 	return &i
 }
 
@@ -275,10 +276,10 @@ func TestRegistry_Resolve(t *testing.T) {
 			name:         "existing package with latest version",
 			id:           "time",
 			version:      "latest",
-			expectError:  false,
-			expectedID:   "time",
+			expectError:  true,
+			expectedID:   "",
 			expectedEnv:  []string{},
-			expectedArgs: []string{"--local-timezone"},
+			expectedArgs: []string{},
 		},
 		{
 			name:        "nonexistent package",
@@ -289,11 +290,11 @@ func TestRegistry_Resolve(t *testing.T) {
 			expectedEnv: nil,
 		},
 		{
-			name:         "version ignored with warning",
+			name:         "version not supported error",
 			id:           "math",
 			version:      "1.0.0",
-			expectError:  false,
-			expectedID:   "math",
+			expectError:  true,
+			expectedID:   "",
 			expectedEnv:  []string{},
 			expectedArgs: []string{},
 		},
@@ -443,11 +444,11 @@ func TestRegistry_ExtractArgumentMetadata_EdgeCases(t *testing.T) {
 			expected: map[string]packages.ArgumentMetadata{
 				"API_KEY": {
 					Name:         "API_KEY",
-					VariableType: packages.VariableTypePositionalArg,
+					VariableType: packages.VariableTypeArgPositional,
 					Required:     true,
 					Description:  "API key",
 					Example:      "key123",
-					Position:     intPtr(1),
+					Position:     testIntPtr(t, 1),
 				},
 			},
 		},
@@ -573,19 +574,19 @@ func TestRegistry_ExtractArgumentMetadata_WithTestdata(t *testing.T) {
 			expected: map[string]packages.ArgumentMetadata{
 				"USER_FILESYSTEM_DIRECTORY": {
 					Name:         "USER_FILESYSTEM_DIRECTORY",
-					VariableType: packages.VariableTypePositionalArg,
+					VariableType: packages.VariableTypeArgPositional,
 					Required:     true,
 					Description:  "The base directory that the server will have access to",
 					Example:      "/Users/username/Documents",
-					Position:     intPtr(1),
+					Position:     testIntPtr(t, 1),
 				},
 				"USER_FILESYSTEM_ALLOWED_DIR": {
 					Name:         "USER_FILESYSTEM_ALLOWED_DIR",
-					VariableType: packages.VariableTypePositionalArg,
+					VariableType: packages.VariableTypeArgPositional,
 					Required:     false,
 					Description:  "Additional allowed directory for file access",
 					Example:      "/Users/username/Projects",
-					Position:     intPtr(2),
+					Position:     testIntPtr(t, 2),
 				},
 			},
 		},
@@ -627,11 +628,11 @@ func TestRegistry_ExtractArgumentMetadata_WithTestdata(t *testing.T) {
 			expected: map[string]packages.ArgumentMetadata{
 				"DATA_DIR": {
 					Name:         "DATA_DIR",
-					VariableType: packages.VariableTypePositionalArg,
+					VariableType: packages.VariableTypeArgPositional,
 					Required:     true,
 					Description:  "Directory for data storage",
 					Example:      "/path/to/data",
-					Position:     intPtr(1),
+					Position:     testIntPtr(t, 1),
 				},
 			},
 		},
@@ -683,7 +684,7 @@ func TestRegistry_ExtractArgumentMetadata_WithTestdata(t *testing.T) {
 
 			// Get the specific server we're testing
 			server, exists := servers[tc.packageName]
-			require.True(t, exists, "Package %q not found in testdata file %q", tc.packageName, tc.testdataFile)
+			require.True(t, exists, "Server %q not found in testdata file %q", tc.packageName, tc.testdataFile)
 
 			// Extract arguments using the fixed logic
 			result := extractArgumentMetadata(server, runtime.DefaultSupportedRuntimes())
@@ -748,11 +749,11 @@ func TestRegistry_ExtractArgumentMetadata_SyntheticCases(t *testing.T) {
 			expected: map[string]packages.ArgumentMetadata{
 				"BASE_DIR": {
 					Name:         "BASE_DIR",
-					VariableType: packages.VariableTypePositionalArg,
+					VariableType: packages.VariableTypeArgPositional,
 					Required:     true,
 					Description:  "Base directory",
 					Example:      "/path/to/files",
-					Position:     intPtr(1),
+					Position:     testIntPtr(t, 1),
 				},
 			},
 		},
@@ -951,13 +952,6 @@ func TestRegistry_Tool_ToDomainType(t *testing.T) {
 				Name:        "t1",
 				Title:       "Tool One",
 				Description: "Test tool",
-				InputSchema: packages.JSONSchema{
-					Type: "object",
-					Properties: map[string]any{
-						"foo": map[string]any{"type": "string"},
-					},
-					Required: []string{"foo"},
-				},
 			},
 		},
 	}
@@ -1083,19 +1077,19 @@ func TestRegistry_ExtractArgumentMetadata_ComprehensiveScenarios(t *testing.T) {
 		// Positional arguments
 		"BASE_DIR": {
 			Name:         "BASE_DIR",
-			VariableType: packages.VariableTypePositionalArg,
+			VariableType: packages.VariableTypeArgPositional,
 			Required:     true,
 			Description:  "Base directory for files",
 			Example:      "/path/to/files",
-			Position:     intPtr(1),
+			Position:     testIntPtr(t, 1),
 		},
 		"OPTIONAL_DIR": {
 			Name:         "OPTIONAL_DIR",
-			VariableType: packages.VariableTypePositionalArg,
+			VariableType: packages.VariableTypeArgPositional,
 			Required:     false,
 			Description:  "Optional directory",
 			Example:      "/path/to/optional",
-			Position:     intPtr(2),
+			Position:     testIntPtr(t, 2),
 		},
 	}
 
@@ -1128,9 +1122,9 @@ func TestRegistry_ExtractArgumentMetadata_ComprehensiveScenarios(t *testing.T) {
 
 	// First two should be positional arguments in position order
 	require.Equal(t, "BASE_DIR", allOrdered[0].Name)
-	require.Equal(t, packages.VariableTypePositionalArg, allOrdered[0].VariableType)
+	require.Equal(t, packages.VariableTypeArgPositional, allOrdered[0].VariableType)
 	require.Equal(t, "OPTIONAL_DIR", allOrdered[1].Name)
-	require.Equal(t, packages.VariableTypePositionalArg, allOrdered[1].VariableType)
+	require.Equal(t, packages.VariableTypeArgPositional, allOrdered[1].VariableType)
 
 	// Rest should be non-positional in alphabetical order by name
 	expectedOrder := []string{"--db-url", "--debug", "--log-level", "API_SECRET", "DB_URL"}
@@ -1158,9 +1152,85 @@ func extractTestCLIArgNames(t *testing.T, args packages.Arguments) []string {
 	var cliArgs []string
 	for key, arg := range args {
 		if arg.VariableType == packages.VariableTypeArg || arg.VariableType == packages.VariableTypeArgBool ||
-			arg.VariableType == packages.VariableTypePositionalArg {
+			arg.VariableType == packages.VariableTypeArgPositional {
 			cliArgs = append(cliArgs, key)
 		}
 	}
 	return cliArgs
+}
+
+func TestRegistry_ExtractArgumentMetadata_ObsidianParsingFix(t *testing.T) {
+	t.Parallel()
+
+	// Load the obsidian samples that demonstrate the parsing issue
+	servers := loadTestDataServers(t, "obsidian_samples.json")
+
+	tests := []struct {
+		name           string
+		serverName     string
+		expectedResult map[string]packages.ArgumentMetadata
+	}{
+		{
+			name:       "obsidian-mcp should parse positional arguments correctly",
+			serverName: "obsidian-mcp",
+			expectedResult: map[string]packages.ArgumentMetadata{
+				"OBSIDIAN_VAULT_PATH": {
+					Name:         "OBSIDIAN_VAULT_PATH",
+					VariableType: packages.VariableTypeArgPositional,
+					Position:     testIntPtr(t, 1),
+					Required:     true,
+					Description:  "Path to your Obsidian vault",
+				},
+				"OBSIDIAN_VAULT_PATH2": {
+					Name:         "OBSIDIAN_VAULT_PATH2",
+					VariableType: packages.VariableTypeArgPositional,
+					Position:     testIntPtr(t, 2),
+					Required:     false,
+					Description:  "Path to your second Obsidian vault",
+				},
+			},
+		},
+		{
+			name:       "mcp-obsidian should parse environment variables correctly",
+			serverName: "mcp-obsidian",
+			expectedResult: map[string]packages.ArgumentMetadata{
+				"OBSIDIAN_API_KEY": {
+					Name:         "OBSIDIAN_API_KEY",
+					VariableType: packages.VariableTypeEnv,
+					Required:     true,
+					Description:  "Obsidian API key",
+					Example:      "your-obsidian-api-key",
+				},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			server, exists := servers[tc.serverName]
+			require.True(t, exists, "Server %q not found in obsidian_samples.json", tc.serverName)
+
+			// Extract arguments using the fixed logic
+			result := extractArgumentMetadata(server, runtime.DefaultSupportedRuntimes())
+
+			// Verify expected arguments are present and correctly classified
+			require.Equal(t, len(tc.expectedResult), len(result),
+				"Unexpected number of arguments extracted for %s", tc.serverName)
+
+			for expectedKey, expectedMeta := range tc.expectedResult {
+				actualMeta, found := result[expectedKey]
+				require.True(t, found, "Expected argument %q not found in results", expectedKey)
+				require.Equal(t, expectedMeta, actualMeta,
+					"Argument metadata mismatch for %q in %s", expectedKey, tc.serverName)
+			}
+
+			// Log results for debugging
+			t.Logf("Server %q extracted %d arguments:", tc.serverName, len(result))
+			for argName, metadata := range result {
+				t.Logf("  %s: %s (%s)", argName, metadata.VariableType, metadata.Description)
+			}
+		})
+	}
 }

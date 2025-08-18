@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Plus, Loader2, AlertCircle, Info, Zap, Globe, Package, HelpCircle, Check } from 'lucide-react'
 import axios from 'axios'
 
-const API_BASE = 'http://localhost:8000'
+import { API_BASE } from './config'
 
 interface QuickAddServerProps {
   onServerAdded: () => void
@@ -48,7 +48,8 @@ export default function QuickAddServer({ onServerAdded }: QuickAddServerProps) {
     }
   }
 
-  const getPlaceholder = () => {
+  // Use useMemo to generate a stable placeholder that won't change on re-renders
+  const placeholder = useMemo(() => {
     const examples = [
       'https://mcp.composio.dev/supabase/mcp?customerId=...',
       '@modelcontextprotocol/server-github',
@@ -57,7 +58,7 @@ export default function QuickAddServer({ onServerAdded }: QuickAddServerProps) {
       'time'
     ]
     return examples[Math.floor(Math.random() * examples.length)]
-  }
+  }, []) // Empty dependency array means this only runs once on mount
 
   return (
     <div className="mb-4">
@@ -69,7 +70,7 @@ export default function QuickAddServer({ onServerAdded }: QuickAddServerProps) {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={getPlaceholder()}
+              placeholder={placeholder}
               disabled={loading}
               className="w-full pl-9 pr-10 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
             />

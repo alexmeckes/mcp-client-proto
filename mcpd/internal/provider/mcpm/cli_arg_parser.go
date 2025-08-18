@@ -48,12 +48,11 @@ func (p *CLIArgParser) parsePositional(arg string, position int) {
 		return
 	}
 
-	// Increment the positional counter and use it as the logical position
-	p.positionalCount++
-
-	// Store as positional argument with logical position information
+	// Only increment counter and store if the placeholder exists in schema
 	if metadata, exists := p.schema[placeholder]; exists {
-		p.storeResultWithPosition(placeholder, packages.VariableTypePositionalArg, metadata, p.positionalCount)
+		// Increment the positional counter and use it as the logical position
+		p.positionalCount++
+		p.storeResultWithPosition(placeholder, packages.VariableTypeArgPositional, metadata, p.positionalCount)
 	}
 }
 

@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	// RegistryName is the name of this registry that will appear as the Package.Source, and in logs/errors.
+	// RegistryName is the name of this registry that will appear as the Server.Source, and in logs/errors.
 	RegistryName = "mcpm"
 
 	// ManifestURL is the URL at which the servers JSON file for the registry can be found for MCPM.
@@ -97,34 +97,28 @@ func (r *Registry) ID() string {
 // Resolve implements the PackageGetter interface for Registry.
 // It retrieves a specific package by its name.
 // The 'version' parameter is not supported for filtering.
-func (r *Registry) Resolve(name string, opt ...options.ResolveOption) (packages.Package, error) {
+func (r *Registry) Resolve(name string, opt ...options.ResolveOption) (packages.Server, error) {
 	// Handle name.
 	name = filter.NormalizeString(name)
 	if name == "" {
-		return packages.Package{}, fmt.Errorf("name must not be empty")
+		return packages.Server{}, fmt.Errorf("name must not be empty")
 	}
 
 	// Handle options.
 	opts, err := options.NewResolveOptions(opt...)
 	if err != nil {
-		return packages.Package{}, err
+		return packages.Server{}, err
+	}
+
+	// Handle unsupported filters.
+	if opts.Version != "" {
+		return packages.Server{}, fmt.Errorf("version is not supported by '%s' registry", r.ID())
 	}
 
 	// Handle creation of filters.
-	fs, err := options.PrepareFilters(options.ResolveFilters(opts), name, func(fs map[string]string) error {
-		// Handle lack of 'version' support in mcpm.
-		if v, ok := fs[options.FilterKeyVersion]; ok {
-			r.logger.Warn(
-				"'version' not supported on resolve operation, returning latest known definition",
-				"name", name,
-				options.FilterKeyVersion, v)
-			// Clear 'version' for mcpm as it cannot be used.
-			delete(fs, options.FilterKeyVersion)
-		}
-		return nil
-	})
+	fs, err := options.PrepareFilters(options.ResolveFilters(opts), name, nil)
 	if err != nil {
-		return packages.Package{}, fmt.Errorf("invalid filters for %s: %w", r.ID(), err)
+		return packages.Server{}, fmt.Errorf("invalid filters for %s: %w", r.ID(), err)
 	}
 
 	r.logger.Debug(
@@ -136,18 +130,18 @@ func (r *Registry) Resolve(name string, opt ...options.ResolveOption) (packages.
 		"filters", fs,
 	)
 
-	result, transformed := r.buildPackageResult(name)
+	result, transformed := r.serverForID(name)
 	if !transformed {
-		return packages.Package{}, fmt.Errorf("failed to build package result for '%s'", name)
+		return packages.Server{}, fmt.Errorf("failed to build package result for '%s'", name)
 	}
 
 	combinedMatchOpts := append(slices.Clone(r.filterOptions), options.WithDefaultMatchers())
 	matches, err := options.Match(result, fs, combinedMatchOpts...)
 	if err != nil {
-		return packages.Package{}, err
+		return packages.Server{}, err
 	}
 	if !matches {
-		return packages.Package{}, fmt.Errorf("package with name '%s' does not match requested filters", name)
+		return packages.Server{}, fmt.Errorf("server with name '%s' does not match requested filters", name)
 	}
 
 	return result, nil
@@ -158,7 +152,7 @@ func (r *Registry) Search(
 	name string,
 	filters map[string]string,
 	opt ...options.SearchOption,
-) ([]packages.Package, error) {
+) ([]packages.Server, error) {
 	name = filter.NormalizeString(name)
 	if name == "" {
 		return nil, fmt.Errorf("name must not be empty")
@@ -169,27 +163,20 @@ func (r *Registry) Search(
 		return nil, err
 	}
 
-	fs, err := options.PrepareFilters(filters, name, func(fs map[string]string) error {
-		// Handle lack of 'version' support in mcpm.
-		if v, ok := fs[options.FilterKeyVersion]; ok {
-			r.logger.Warn(
-				"'version' not supported on search operation, returning latest known definition",
-				"name", name,
-				options.FilterKeyVersion, v,
-			)
-			// Clear 'version' for mcpm as it cannot be used.
-			delete(fs, options.FilterKeyVersion)
-		}
-		return nil
-	})
+	// Handle unsupported filters.
+	if v, ok := filters[options.FilterKeyVersion]; ok && v != "" {
+		return nil, fmt.Errorf("version is not supported by '%s' registry", r.ID())
+	}
+
+	fs, err := options.PrepareFilters(filters, name, nil)
 	if err != nil {
 		return nil, fmt.Errorf("invalid filters for %s: %w", r.ID(), err)
 	}
 
 	r.logger.Debug("Searching for package", "name", name, "filters", fs, "source", opts.Source)
-	var results []packages.Package
+	var results []packages.Server
 	for id := range r.mcpServers {
-		result, transformed := r.buildPackageResult(id)
+		result, transformed := r.serverForID(id)
 		if !transformed {
 			continue
 		}
@@ -213,16 +200,16 @@ func (r *Registry) Search(
 	return results, nil
 }
 
-// buildPackageResult attempts to convert the MCPServer associated with the specified ID,
-// into a Package.
+// serverForID attempts to convert the MCPServer associated with the specified ID,
+// into a Server.
 // Returns the transformed result, and a flag to indicate if the transformation was successful.
 // If the server cannot be transformed due to unsupported or malformed runtime installations, false is returned.
-func (r *Registry) buildPackageResult(pkgKey string) (packages.Package, bool) {
+func (r *Registry) serverForID(pkgKey string) (packages.Server, bool) {
 	// Sanity check to ensure things work when a random ID gets supplied.
 	sd, foundServer := r.mcpServers[pkgKey]
 	if !foundServer {
 		r.logger.Warn("cannot transform package, unknown key", "pkgKey", pkgKey)
-		return packages.Package{}, false
+		return packages.Server{}, false
 	}
 
 	runtimesAndPackages, err := r.supportedRuntimePackageNames(sd.Installations)
@@ -232,14 +219,8 @@ func (r *Registry) buildPackageResult(pkgKey string) (packages.Package, bool) {
 			"pkgKey", pkgKey,
 			"error", err,
 		)
-		return packages.Package{}, false
+		return packages.Server{}, false
 	}
-
-	var runtimes []runtime.Runtime
-	for rt := range runtimesAndPackages {
-		runtimes = append(runtimes, rt)
-	}
-	slices.Sort(runtimes)
 
 	tools, err := sd.Tools.ToDomainType()
 	if err != nil {
@@ -248,26 +229,31 @@ func (r *Registry) buildPackageResult(pkgKey string) (packages.Package, bool) {
 			"name", pkgKey,
 			"error", err,
 		)
-		return packages.Package{}, false
+		return packages.Server{}, false
 	}
 
 	// Analyze actual runtime variables and convert to ArgumentMetadata format
 	arguments := extractArgumentMetadata(sd, r.supportedRuntimes)
+	installations := convertInstallations(sd, r.supportedRuntimes)
 
-	return packages.Package{
-		Source:        RegistryName,
-		ID:            pkgKey,
-		Name:          pkgKey,
-		DisplayName:   sd.DisplayName,
-		Description:   sd.Description,
-		License:       sd.License,
-		Tools:         tools,
-		Tags:          sd.Tags,
-		Categories:    sd.Categories,
-		Runtimes:      runtimes,
-		Installations: convertInstallations(sd.Installations, r.supportedRuntimes),
+	return packages.Server{
 		Arguments:     arguments,
+		Categories:    sd.Categories,
+		Deprecated:    false, // MCPM doesn't support deprecated packages
+		Description:   sd.Description,
+		DisplayName:   sd.DisplayName,
+		Homepage:      sd.Homepage,
+		ID:            pkgKey,
+		Installations: installations,
 		IsOfficial:    sd.IsOfficial,
+		License:       sd.License,
+		Name:          pkgKey,
+		Publisher: packages.Publisher{
+			Name: sd.Author.Name,
+		},
+		Source: RegistryName,
+		Tags:   sd.Tags,
+		Tools:  tools,
 	}, true
 }
 
@@ -396,12 +382,14 @@ func shouldIgnoreFlag(rt runtime.Runtime, flag string) bool {
 // convertInstallations converts MCPM installation data to internal package format.
 // Only includes installations for supported runtimes with valid configurations.
 func convertInstallations(
-	src map[string]Installation,
+	srv MCPServer,
 	supported map[runtime.Runtime]struct{},
 ) map[runtime.Runtime]packages.Installation {
-	if src == nil {
+	if srv.Installations == nil {
 		return nil
 	}
+
+	src := srv.Installations
 
 	specs := runtime.Specs()
 	details := make(map[runtime.Runtime]packages.Installation, len(src))
@@ -424,12 +412,16 @@ func convertInstallations(
 		}
 
 		details[rt] = packages.Installation{
-			Command:     install.Command,
-			Args:        slices.Clone(install.Args),
+			Runtime:     runtime.Runtime(install.Command),
 			Package:     pkg,
-			Env:         maps.Clone(install.Env),
 			Description: install.Description,
 			Recommended: install.Recommended,
+			Deprecated:  false, // MCPM doesn't support deprecated installations
+			Transports:  packages.DefaultTransports().ToStrings(),
+			Repository: &packages.Repository{
+				Type: srv.Repository.Type,
+				URL:  srv.Repository.URL,
+			},
 		}
 	}
 
@@ -442,11 +434,6 @@ func (t Tool) ToDomainType() (packages.Tool, error) {
 		Name:        t.Name,
 		Title:       t.Title,
 		Description: t.Description,
-		InputSchema: packages.JSONSchema{
-			Type:       t.InputSchema.Type,
-			Properties: t.InputSchema.Properties,
-			Required:   t.InputSchema.Required,
-		},
 	}, nil
 }
 
