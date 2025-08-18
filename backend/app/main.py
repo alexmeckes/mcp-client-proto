@@ -573,8 +573,9 @@ async def list_servers():
     """List available MCP servers from both mcpd and remote sources"""
     servers = []
     
+    # Try to get servers from MCPD regardless of mcpd_available flag (for debugging)
     # Get local servers from mcpd (only if available)
-    if mcpd_available:
+    if True:  # Changed from mcpd_available for testing
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(f"{MCPD_BASE_URL}/servers")
