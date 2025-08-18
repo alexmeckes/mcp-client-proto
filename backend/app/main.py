@@ -1277,28 +1277,10 @@ MCP_SERVER_REGISTRY = [
 
 @app.get("/mcp-registry")
 async def get_mcp_registry():
-    """Get list of available MCP servers from registry"""
-    # Check which servers are already installed
-    project_cfg, _ = _default_config_paths()
-    installed_servers = set()
-    
-    if project_cfg.exists():
-        try:
-            with open(project_cfg, 'rb') as f:
-                config = tomli.load(f)
-                servers = config.get("servers", [])
-                installed_servers = {s.get("name") for s in servers}
-        except:
-            pass
-    
-    # Mark installed servers
-    registry = []
-    for server in MCP_SERVER_REGISTRY:
-        server_copy = server.model_copy()
-        server_copy.installed = server.name in installed_servers
-        registry.append(server_copy)
-    
-    return registry
+    """MCPD removed - return empty registry"""
+    # MCPD has been removed, so local MCP servers won't work
+    # Users should add remote MCP servers instead (like Composio)
+    return []
 
 @app.post("/install-mcp-server")
 async def install_mcp_server(request: InstallServerRequest):

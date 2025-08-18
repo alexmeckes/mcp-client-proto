@@ -7,6 +7,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 // import ServerMarketplace from './ServerMarketplace' // MCPD removed
 import QuickAddServer from './QuickAddServer'
+import ServerTemplates from './ServerTemplates'
 
 import { API_BASE, WS_BASE } from './config'
 
@@ -498,7 +499,10 @@ function AppMultiModel() {
           </button> */}
         </div>
         
-        {/* Quick Add Server */}
+        {/* Server Templates for Easy Setup */}
+        <ServerTemplates onServerAdded={fetchServers} />
+        
+        {/* Quick Add Server (Manual URL) */}
         <QuickAddServer onServerAdded={fetchServers} />
         
         {/* Server Filter */}
