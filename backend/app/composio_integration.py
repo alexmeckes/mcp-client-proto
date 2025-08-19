@@ -407,105 +407,12 @@ class ComposioIntegration:
             
         return None
     
-    async def create_mcp_server(self, user_id: str, app_name: str) -> Optional[Dict[str, str]]:
-        """
-        Create an MCP server using Composio SDK (proper way)
-        
-        Args:
-            user_id: User identifier (entity ID in Composio)
-            app_name: Name of the app (gmail, slack, etc.)
-        
-        Returns:
-            Dict with server_id and url, or None if failed
-        """
-        if not self.client:
-            logger.error("Composio client not configured")
-            return None
-            
-        try:
-            # Get the user's connection for this app
-            connections = await self.get_user_connections(user_id)
-            connection_id = None
-            auth_config_id = None
-            
-            for conn in connections:
-                if conn.get("app", "").lower() == app_name.lower():
-                    connection_id = conn.get("connection_id")
-                    auth_config_id = conn.get("auth_config_id")
-                    logger.info(f"Found connection for {app_name}: connection_id={connection_id}, auth_config_id={auth_config_id}")
-                    break
-            
-            if not connection_id:
-                logger.error(f"No connection found for {app_name}. User needs to connect the app first.")
-                return None
-            
-            # Use the SDK to create MCP server properly
-            # According to docs, we need to use the MCP module
-            try:
-                # Import MCP module from Composio SDK
-                from composio.client.enums import App, Action
-                
-                # Get all Gmail actions/tools
-                gmail_tools = [
-                    "GMAIL_SEND_EMAIL",
-                    "GMAIL_LIST_EMAILS",
-                    "GMAIL_GET_EMAIL",
-                    "GMAIL_REPLY_TO_EMAIL",
-                    "GMAIL_CREATE_DRAFT",
-                    "GMAIL_DELETE_EMAIL",
-                    "GMAIL_MARK_EMAIL_AS_READ",
-                    "GMAIL_MARK_EMAIL_AS_UNREAD",
-                    "GMAIL_FORWARD_EMAIL",
-                    "GMAIL_GET_PROFILE",
-                    "GMAIL_SEARCH_EMAILS",
-                    "GMAIL_ADD_LABEL",
-                    "GMAIL_REMOVE_LABEL",
-                    "GMAIL_CREATE_LABEL",
-                    "GMAIL_LIST_LABELS"
-                ]
-                
-                # Create server name
-                server_name = f"{app_name}-{user_id[:8]}"
-                
-                # Check if MCP module exists in SDK
-                if hasattr(self.client, 'mcp'):
-                    logger.info(f"Creating MCP server using SDK for {app_name}")
-                    
-                    # Create the MCP server with proper configuration
-                    server_config = [{
-                        "authConfigId": auth_config_id or connection_id,  # Use auth config or connection
-                        "allowedTools": gmail_tools if app_name.lower() == "gmail" else []
-                    }]
-                    
-                    # Create the server
-                    result = self.client.mcp.create(
-                        server_name,
-                        server_config,
-                        {"isChatAuth": False}  # We already have auth
-                    )
-                    
-                    if result:
-                        logger.info(f"Created MCP server via SDK: {result}")
-                        return {
-                            "server_id": result.get("id", server_name),
-                            "url": result.get("url", f"https://mcp.composio.dev/composio/server/{result.get('id')}/mcp")
-                        }
-                else:
-                    logger.warning("MCP module not found in SDK, falling back to API method")
-                    return await self.create_mcp_server_old(user_id, app_name)
-                    
-            except ImportError as e:
-                logger.error(f"Failed to import Composio MCP modules: {e}")
-                return await self.create_mcp_server_old(user_id, app_name)
-            except Exception as e:
-                logger.error(f"Failed to create MCP server via SDK: {e}")
-                return await self.create_mcp_server_old(user_id, app_name)
-                
-        except Exception as e:
-            logger.error(f"Failed to create MCP server: {e}")
-            return None
+    async def create_mcp_server_old_without_fix(self, user_id: str, app_name: str) -> Optional[Dict[str, str]]:
+        """Old method without auth_config_id fix - should not be used"""
+        print(f"🚨 WARNING: Using old method without auth_config_id fix")
+        # This is the old implementation that doesn't get/create auth_config_id properly
     
-    async def create_mcp_server_old(self, user_id: str, app_name: str) -> Optional[Dict[str, str]]:
+    async def create_mcp_server(self, user_id: str, app_name: str) -> Optional[Dict[str, str]]:
         """
         Create an MCP server instance for a connected app via Composio API
         
