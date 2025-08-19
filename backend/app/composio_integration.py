@@ -580,44 +580,112 @@ class ComposioIntegration:
             safe_name = f"{app_name}-mcp-{user_id[:8]}".replace("_", "-")
             
             # Create MCP server with full configuration
-            # Based on Composio's API, we need to ensure tools are enabled
+            # Based on Composio's API documentation, we need to specify tools explicitly
+            
+            # Define all Gmail tools we want to enable
+            gmail_tools = [
+                "GMAIL_SEND_EMAIL",
+                "GMAIL_LIST_EMAILS", 
+                "GMAIL_GET_EMAIL",
+                "GMAIL_REPLY_TO_EMAIL",
+                "GMAIL_CREATE_DRAFT",
+                "GMAIL_DELETE_EMAIL",
+                "GMAIL_MARK_EMAIL_AS_READ",
+                "GMAIL_MARK_EMAIL_AS_UNREAD",
+                "GMAIL_FORWARD_EMAIL",
+                "GMAIL_GET_PROFILE",
+                "GMAIL_SEARCH_EMAILS",
+                "GMAIL_ADD_LABEL_TO_EMAIL",
+                "GMAIL_REMOVE_LABEL_FROM_EMAIL",
+                "GMAIL_CREATE_LABEL",
+                "GMAIL_LIST_LABELS",
+                "GMAIL_DELETE_LABEL",
+                "GMAIL_TRASH_EMAIL",
+                "GMAIL_UNTRASH_EMAIL",
+                "GMAIL_GET_THREAD",
+                "GMAIL_LIST_THREADS"
+            ]
+            
+            # Build the request data - try different formats
+            # Format 1: Simple with auth_config_ids and allowedTools
             data = {
                 "name": safe_name,  # Name with only allowed characters
                 "auth_config_ids": [auth_config_id],  # Required: auth config from OAuth connection
                 "apps": [app_name.upper()],  # Apps should be uppercase (GMAIL, SLACK, etc)
-                "enable_all_tools": True,  # Enable all tools for the apps
-                "auto_configure": True  # Auto-configure based on connected apps
+            }
+            
+            # Add allowedTools if this is Gmail
+            if app_name.lower() == "gmail":
+                data["allowedTools"] = gmail_tools
+                logger.info(f"Specifying {len(gmail_tools)} Gmail tools for MCP server")
+            
+            # Alternative format based on JS SDK example: serverConfig array
+            data_alt = {
+                "name": safe_name,
+                "serverConfig": [
+                    {
+                        "authConfigId": auth_config_id,
+                        "allowedTools": gmail_tools if app_name.lower() == "gmail" else []
+                    }
+                ],
+                "options": {
+                    "isChatAuth": False  # We already have auth from OAuth
+                }
             }
             
             # Add entity_id to link the server to the user
             if user_id:
                 data["entity_id"] = user_id
             
-            logger.info(f"MCP server creation request: {json.dumps(data)}")
+            logger.info(f"MCP server creation request (format 1): {json.dumps(data)}")
+            logger.info(f"MCP server creation request (format 2): {json.dumps(data_alt)}")
             
             async with httpx.AsyncClient() as client:
-                # Try custom endpoint first for more control
-                logger.info("Trying custom MCP server endpoint for full tool configuration")
+                # Try the alternative format first (based on JS SDK)
+                logger.info("Trying alternative format with serverConfig")
                 response = await client.post(
-                    "https://backend.composio.dev/api/v1/mcp/servers/custom",
+                    "https://backend.composio.dev/api/v1/mcp/servers",
                     headers=headers,
-                    json=data,
+                    json=data_alt,
                     timeout=30.0
                 )
+                
+                # If alternative format fails, try custom endpoint
+                if response.status_code not in [200, 201]:
+                    logger.info(f"Alternative format failed with {response.status_code}, trying custom endpoint")
+                    response = await client.post(
+                        "https://backend.composio.dev/api/v1/mcp/servers/custom",
+                        headers=headers,
+                        json=data,
+                        timeout=30.0
+                    )
                 
                 # If custom endpoint fails, try standard endpoint
                 if response.status_code == 404:
                     logger.info("Custom endpoint not found, trying standard endpoint")
-                    # Remove custom-only fields
+                    # For standard endpoint, include allowedTools
                     standard_data = {
                         "name": data["name"],
                         "auth_config_ids": data["auth_config_ids"],
                         "apps": data["apps"]
                     }
+                    if "allowedTools" in data:
+                        standard_data["allowedTools"] = data["allowedTools"]
+                    
                     response = await client.post(
                         "https://backend.composio.dev/api/v1/mcp/servers",
                         headers=headers,
                         json=standard_data,
+                        timeout=30.0
+                    )
+                
+                # If v1 fails, try v3 endpoint
+                if response.status_code == 404:
+                    logger.info("v1 endpoint not found, trying v3 endpoint")
+                    response = await client.post(
+                        "https://backend.composio.dev/api/v3/mcp/servers",
+                        headers=headers,
+                        json=data,
                         timeout=30.0
                     )
                 
