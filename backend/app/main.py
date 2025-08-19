@@ -819,6 +819,7 @@ async def websocket_chat(websocket: WebSocket):
                 model.startswith("openai/gpt-4") or
                 model.startswith("openai/gpt-3.5-turbo")
             )
+            print(f"Model: {model}, Supports tools: {supports_tools}, Available servers: {available_servers}")
             if available_servers and supports_tools:
                 for server in available_servers:
                     try:
@@ -826,6 +827,7 @@ async def websocket_chat(websocket: WebSocket):
                         if server in remote_mcp_servers:
                             # Fetch tools from remote server
                             config = remote_mcp_servers[server]
+                            print(f"Fetching tools from remote server {server} at {config.endpoint}")
                             async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
                                 headers = config.headers.copy()
                                 is_composio = "composio" in config.endpoint
@@ -834,11 +836,17 @@ async def websocket_chat(websocket: WebSocket):
                                 elif config.auth_token:
                                     headers["Authorization"] = f"Bearer {config.auth_token}"
                                 
-                                tool_response = await client.post(
-                                    config.endpoint,
-                                    headers=headers,
-                                    json={"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 1}
-                                )
+                                try:
+                                    tool_response = await client.post(
+                                        config.endpoint,
+                                        headers=headers,
+                                        json={"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 1}
+                                    )
+                                    print(f"Tool response status: {tool_response.status_code}")
+                                except httpx.HTTPError as e:
+                                    print(f"HTTP error fetching tools from {server}: {e}")
+                                    print(f"Request URL: {config.endpoint}")
+                                    raise
                                 
                                 # Handle Composio's SSE response
                                 if is_composio and tool_response.headers.get("content-type", "").startswith("text/event-stream"):
@@ -854,8 +862,10 @@ async def websocket_chat(websocket: WebSocket):
                                                 continue
                                     if result and "result" in result:
                                         server_tools = result["result"].get("tools", [])
+                                        print(f"Found {len(server_tools)} tools from SSE response")
                                     else:
                                         server_tools = []
+                                        print(f"No tools found in SSE response: {result}")
                                 else:
                                     result = tool_response.json()
                                     if "result" in result:
