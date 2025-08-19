@@ -1260,11 +1260,27 @@ async def websocket_chat(websocket: WebSocket):
                                 }
                             }
                             tools.append(tool_def)
+                            
+                            # Log tool being added
+                            if i < 5:  # Log first 5 tools
+                                print(f"Added tool: {full_name}")
                     except Exception as e:
                         print(f"Error getting tools for {server}: {e}")
                         continue
             
-            print(f"Total tools gathered: {len(tools)}")
+            # Deduplicate tools by name
+            seen_names = set()
+            unique_tools = []
+            for tool in tools:
+                tool_name = tool["function"]["name"]
+                if tool_name not in seen_names:
+                    seen_names.add(tool_name)
+                    unique_tools.append(tool)
+                else:
+                    print(f"Skipping duplicate tool: {tool_name}")
+            
+            tools = unique_tools
+            print(f"Total unique tools: {len(tools)}")
             
             # Format messages for the model
             llm_messages = [
