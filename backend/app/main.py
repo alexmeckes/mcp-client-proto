@@ -68,8 +68,11 @@ async def startup_event():
     """Check if MCPD is available on startup"""
     global mcpd_available
     
+    print("🚀 FastAPI startup event triggered")
+    
     if not MCPD_ENABLED:
         print("MCPD is disabled in configuration")
+        print("🚀 Startup complete - server should be ready!")
         return
     
     print(f"Checking MCPD availability at {MCPD_HEALTH_CHECK_URL}...")
@@ -128,23 +131,49 @@ async def setup_default_servers():
 @app.get("/health")
 async def health_check():
     """Health check endpoint for the backend"""
+    try:
+        return {
+            "status": "healthy",
+            "mcpd_available": mcpd_available,
+            "mcpd_url": MCPD_BASE_URL if mcpd_available else None,
+            "composio_available": composio is not None,
+            "port": os.getenv("PORT"),
+            "timestamp": "2025-08-19T20:00:00Z"
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+@app.get("/debug")
+async def debug_info():
+    """Debug endpoint to check server status"""
     return {
-        "status": "healthy",
-        "mcpd_available": mcpd_available,
-        "mcpd_url": MCPD_BASE_URL if mcpd_available else None
+        "message": "Server is running!",
+        "composio_status": "available" if composio else "unavailable",
+        "environment": {
+            "PORT": os.getenv("PORT"),
+            "COMPOSIO_API_KEY": "SET" if os.getenv("COMPOSIO_API_KEY") else "NOT SET",
+            "MCPD_ENABLED": MCPD_ENABLED
+        }
     }
+
+# Add startup debugging
+print("🚀 Starting MCP Client API...")
+print(f"🚀 Python path: {os.path.abspath('.')}")
+print(f"🚀 Environment variables: PORT={os.getenv('PORT')}, COMPOSIO_API_KEY={'SET' if os.getenv('COMPOSIO_API_KEY') else 'NOT SET'}")
 
 # Initialize Composio integration with error handling
 try:
-    print("Initializing Composio integration...")
+    print("🚀 Initializing Composio integration...")
     composio = ComposioIntegration()
     composio_direct = ComposioToolsDirect()
-    print("✓ Composio integration initialized successfully")
+    print("✅ Composio integration initialized successfully")
 except Exception as e:
     print(f"⚠️ Failed to initialize Composio integration: {e}")
     print("Continuing without Composio integration...")
     composio = None
     composio_direct = None
+
+print("🚀 FastAPI app initialization complete")
 
 class ComposioConnectRequest(BaseModel):
     user_id: str
