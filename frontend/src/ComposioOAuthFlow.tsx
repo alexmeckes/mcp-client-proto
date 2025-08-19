@@ -118,7 +118,11 @@ export default function ComposioOAuthFlow({ onServerAdded }: ComposioOAuthFlowPr
 
       if (response.data.added) {
         setConnectedApps(prev => new Set([...prev, appId]))
-        onServerAdded()
+        
+        // Wait a moment for server to be fully registered, then refresh
+        setTimeout(() => {
+          onServerAdded()
+        }, 500)
         
         // Show success message
         setError(null)

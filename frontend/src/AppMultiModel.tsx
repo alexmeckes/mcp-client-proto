@@ -121,6 +121,7 @@ function AppMultiModel() {
   const fetchServers = async () => {
     try {
       const response = await axios.get(`${API_BASE}/servers`)
+      console.log('Fetched servers:', response.data)
       const serverList = response.data.map((server: any) => ({
         name: typeof server === 'string' ? server : server.name,
         type: server.type || 'local',
@@ -129,6 +130,7 @@ function AppMultiModel() {
         selected: server.name?.startsWith('composio-') || false,
         tools: []
       }))
+      console.log('Processed server list:', serverList)
       setServers(serverList)
     } catch (err) {
       console.error('Failed to fetch servers:', err)
