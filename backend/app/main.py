@@ -2459,12 +2459,36 @@ async def quick_add_server(request: QuickAddRequest):
         
         raise HTTPException(status_code=400, detail=f"Could not determine how to add: {input_str}")
 
+@app.post("/clear-mcp-mapping/{user_id}/{app_name}")
+async def clear_mcp_mapping(user_id: str, app_name: str):
+    """Clear a specific MCP server mapping to force recreation"""
+    mapping_key = f"{user_id}:{app_name}"
+    if mapping_key in mcp_server_mappings:
+        old_id = mcp_server_mappings[mapping_key]
+        del mcp_server_mappings[mapping_key]
+        return {"status": "success", "message": f"Cleared mapping for {mapping_key} (was {old_id})"}
+    return {"status": "not_found", "message": f"No mapping found for {mapping_key}"}
+
 @app.delete("/remove-server/{server_name}")
 async def remove_server(server_name: str):
     """Remove a server (local or remote)"""
     # Check if it's a remote server
     if server_name in remote_mcp_servers:
         del remote_mcp_servers[server_name]
+        
+        # Also clear from mcp_server_mappings if it's a Composio server
+        if server_name.startswith("composio-"):
+            # Find and remove any mappings that point to this server
+            keys_to_remove = []
+            for key, value in mcp_server_mappings.items():
+                # Check if this mapping is for the server we're removing
+                if server_name.endswith(key.split(':')[1]):  # Match app name
+                    keys_to_remove.append(key)
+                    print(f"Clearing mapping for {key} -> {value}")
+            
+            for key in keys_to_remove:
+                del mcp_server_mappings[key]
+        
         return {"status": "success", "message": f"Removed remote server: {server_name}"}
     
     # Otherwise try to remove from mcpd
