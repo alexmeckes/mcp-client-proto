@@ -813,14 +813,55 @@ async def websocket_chat(websocket: WebSocket):
             
             # Gather tools if available and model supports them
             tools = []
-            if available_servers and model.startswith("anthropic/"):
+            # Check if model supports tools (Anthropic, OpenAI GPT-4, etc.)
+            supports_tools = (
+                model.startswith("anthropic/") or 
+                model.startswith("openai/gpt-4") or
+                model.startswith("openai/gpt-3.5-turbo")
+            )
+            if available_servers and supports_tools:
                 for server in available_servers:
                     try:
                         # Check if it's a remote server or local
                         if server in remote_mcp_servers:
-                            # Use the get_server_tools endpoint for remote servers
-                            response = await get_server_tools(server)
-                            server_tools = response.get("tools", [])
+                            # Fetch tools from remote server
+                            config = remote_mcp_servers[server]
+                            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+                                headers = config.headers.copy()
+                                is_composio = "composio" in config.endpoint
+                                if is_composio:
+                                    headers["Accept"] = "application/json, text/event-stream"
+                                elif config.auth_token:
+                                    headers["Authorization"] = f"Bearer {config.auth_token}"
+                                
+                                tool_response = await client.post(
+                                    config.endpoint,
+                                    headers=headers,
+                                    json={"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 1}
+                                )
+                                
+                                # Handle Composio's SSE response
+                                if is_composio and tool_response.headers.get("content-type", "").startswith("text/event-stream"):
+                                    text = tool_response.text
+                                    result = None
+                                    for line in text.split('\n'):
+                                        if line.startswith('data: '):
+                                            data = line[6:]
+                                            try:
+                                                result = json.loads(data)
+                                                break
+                                            except:
+                                                continue
+                                    if result and "result" in result:
+                                        server_tools = result["result"].get("tools", [])
+                                    else:
+                                        server_tools = []
+                                else:
+                                    result = tool_response.json()
+                                    if "result" in result:
+                                        server_tools = result["result"].get("tools", [])
+                                    else:
+                                        server_tools = []
                         else:
                             # Local server via mcpd
                             async with httpx.AsyncClient() as client:
