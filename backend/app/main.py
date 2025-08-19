@@ -891,6 +891,7 @@ async def websocket_chat(websocket: WebSocket):
                                 server_tools = []
                                 
                                 # First, initialize the MCP session
+                                # Use the newer protocol version that Composio supports
                                 init_response = await client.post(
                                     config.endpoint,
                                     headers=headers,
@@ -898,8 +899,11 @@ async def websocket_chat(websocket: WebSocket):
                                         "jsonrpc": "2.0", 
                                         "method": "initialize", 
                                         "params": {
-                                            "protocolVersion": "0.1.0",
-                                            "capabilities": {},
+                                            "protocolVersion": "2025-03-26",  # Updated to match Composio's version
+                                            "capabilities": {
+                                                "tools": {},  # Indicate we support tools
+                                                "resources": {}  # Indicate we support resources
+                                            },
                                             "clientInfo": {
                                                 "name": "mcp-client-proto",
                                                 "version": "1.0.0"
@@ -927,27 +931,49 @@ async def websocket_chat(websocket: WebSocket):
                                                     try:
                                                         init_result = json.loads(data)
                                                         print(f"Initialize SSE response: {json.dumps(init_result, indent=2)[:500]}")
-                                                        if "result" in init_result and "tools" in init_result["result"]:
-                                                            print(f"Tools found in initialize response!")
-                                                            server_tools = init_result["result"]["tools"]
-                                                            print(f"Found {len(server_tools)} tools from initialize")
-                                                            break
+                                                        
+                                                        # Check for tools in result.tools
+                                                        if "result" in init_result:
+                                                            if "tools" in init_result["result"] and isinstance(init_result["result"]["tools"], list):
+                                                                print(f"Tools found as array in initialize response!")
+                                                                server_tools = init_result["result"]["tools"]
+                                                                print(f"Found {len(server_tools)} tools from initialize")
+                                                                break
+                                                            # Also check if tools is empty dict (meaning we need to call tools/list)
+                                                            elif "capabilities" in init_result["result"] and "tools" in init_result["result"]["capabilities"]:
+                                                                print(f"Server has tools capability but no tools in init response")
+                                                                # Will need to call tools/list
                                                     except:
                                                         continue
                                         else:
                                             # Regular JSON response
                                             init_result = init_response.json()
                                             print(f"Initialize JSON response: {json.dumps(init_result, indent=2)[:500]}")
-                                            if "result" in init_result and "tools" in init_result["result"]:
-                                                print(f"Tools found in initialize response!")
-                                                server_tools = init_result["result"]["tools"]
-                                                print(f"Found {len(server_tools)} tools from initialize")
+                                            
+                                            # Check for tools in result.tools
+                                            if "result" in init_result:
+                                                if "tools" in init_result["result"] and isinstance(init_result["result"]["tools"], list):
+                                                    print(f"Tools found as array in initialize response!")
+                                                    server_tools = init_result["result"]["tools"]
+                                                    print(f"Found {len(server_tools)} tools from initialize")
+                                                # Also check if tools is empty dict (meaning we need to call tools/list)
+                                                elif "capabilities" in init_result["result"] and "tools" in init_result["result"]["capabilities"]:
+                                                    print(f"Server has tools capability but no tools in init response")
                                     except Exception as e:
                                         print(f"Error parsing init response: {e}")
                                         print(f"Raw response: {init_response.text[:500]}")
                                     
                                     # Skip tools/list if we already have tools
-                                    if server_tools:
+                                    if server_tools and len(server_tools) > 0:
+                                        print(f"Already have {len(server_tools)} tools from initialization, skipping tools/list")
+                                        # Format them properly for our system
+                                        for tool in server_tools:
+                                            tools.append({
+                                                "name": tool.get("name", ""),
+                                                "description": tool.get("description", ""),
+                                                "input_schema": tool.get("inputSchema", tool.get("input_schema", {})),
+                                                "server": server
+                                            })
                                         continue
                                 
                                 try:
@@ -963,22 +989,31 @@ async def websocket_chat(websocket: WebSocket):
                                     try:
                                         test_result = tool_response.json()
                                         if test_result.get("error", {}).get("code") == -32601:
-                                            print(f"tools/list not supported, trying listTools...")
+                                            print(f"tools/list not supported, trying mcp/list_tools...")
                                             # Try alternative method names
                                             tool_response = await client.post(
                                                 config.endpoint,
                                                 headers=headers,
-                                                json={"jsonrpc": "2.0", "method": "listTools", "params": {}, "id": 3}
+                                                json={"jsonrpc": "2.0", "method": "mcp/list_tools", "params": {}, "id": 3}
                                             )
                                             
                                             test_result = tool_response.json()
                                             if test_result.get("error", {}).get("code") == -32601:
-                                                print(f"listTools not supported, trying list...")
+                                                print(f"mcp/list_tools not supported, trying listTools...")
                                                 tool_response = await client.post(
                                                     config.endpoint,
                                                     headers=headers,
-                                                    json={"jsonrpc": "2.0", "method": "list", "params": {}, "id": 4}
+                                                    json={"jsonrpc": "2.0", "method": "listTools", "params": {}, "id": 4}
                                                 )
+                                                
+                                                test_result = tool_response.json()
+                                                if test_result.get("error", {}).get("code") == -32601:
+                                                    print(f"listTools not supported, trying list...")
+                                                    tool_response = await client.post(
+                                                        config.endpoint,
+                                                        headers=headers,
+                                                        json={"jsonrpc": "2.0", "method": "list", "params": {}, "id": 5}
+                                                    )
                                     except:
                                         pass
                                     print(f"Tool response status: {tool_response.status_code}")
