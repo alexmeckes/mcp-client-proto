@@ -200,11 +200,17 @@ async def add_composio_mcp_server(request: AddMCPServerRequest):
     server_name = f"composio-{request.app_name}"
     
     # Add to remote MCP servers using the existing structure
+    # Check if we have a Composio API key to authenticate
+    composio_api_key = os.getenv("COMPOSIO_API_KEY", "")
+    headers = {"Content-Type": "application/json"}
+    if composio_api_key:
+        headers["X-API-Key"] = composio_api_key
+    
     remote_mcp_servers[server_name] = RemoteServerConfig(
         name=server_name,
         endpoint=mcp_url,
         auth_token=None,
-        headers={"Content-Type": "application/json"}
+        headers=headers
     )
     
     print(f"Added MCP server {server_name} with URL {mcp_url}")
@@ -833,6 +839,10 @@ async def websocket_chat(websocket: WebSocket):
                                 is_composio = "composio" in config.endpoint
                                 if is_composio:
                                     headers["Accept"] = "application/json, text/event-stream"
+                                    # Add Composio API key if available
+                                    composio_api_key = os.getenv("COMPOSIO_API_KEY", "")
+                                    if composio_api_key and "X-API-Key" not in headers:
+                                        headers["X-API-Key"] = composio_api_key
                                 elif config.auth_token:
                                     headers["Authorization"] = f"Bearer {config.auth_token}"
                                 
