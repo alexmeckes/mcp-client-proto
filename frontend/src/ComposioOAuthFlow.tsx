@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Shield, Plus, Check, AlertCircle, ExternalLink, Loader2, X } from 'lucide-react'
 import axios from 'axios'
 import { API_BASE } from './config'
@@ -22,6 +22,12 @@ export default function ComposioOAuthFlow({ onServerAdded }: ComposioOAuthFlowPr
   const [connectedApps, setConnectedApps] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
   const [checkingConnections, setCheckingConnections] = useState(false)
+  const onServerAddedRef = useRef(onServerAdded)
+  
+  // Update ref when prop changes
+  useEffect(() => {
+    onServerAddedRef.current = onServerAdded
+  }, [onServerAdded])
 
   useEffect(() => {
     // Generate or retrieve user ID
@@ -43,7 +49,7 @@ export default function ComposioOAuthFlow({ onServerAdded }: ComposioOAuthFlowPr
       // Clean up URL
       window.history.replaceState({}, '', window.location.pathname)
     }
-  }, [onServerAdded])
+  }, [])
 
   const checkUserConnections = async (uid: string) => {
     setCheckingConnections(true)
@@ -74,7 +80,7 @@ export default function ComposioOAuthFlow({ onServerAdded }: ComposioOAuthFlowPr
         // Refresh servers list if we added any
         if (serversAdded) {
           setTimeout(() => {
-            onServerAdded()
+            onServerAddedRef.current()
           }, 500)
         }
       }
@@ -126,7 +132,7 @@ export default function ComposioOAuthFlow({ onServerAdded }: ComposioOAuthFlowPr
       })
 
       setConnectedApps(prev => new Set([...prev, appId]))
-      onServerAdded()
+      onServerAddedRef.current()
       setConnecting(null)
     } catch (err) {
       throw err
@@ -146,7 +152,7 @@ export default function ComposioOAuthFlow({ onServerAdded }: ComposioOAuthFlowPr
         
         // Wait a moment for server to be fully registered, then refresh
         setTimeout(() => {
-          onServerAdded()
+          onServerAddedRef.current()
         }, 500)
         
         // Show success message
