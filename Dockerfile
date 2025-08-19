@@ -29,5 +29,4 @@ ENV CLOUD_MODE=true
 EXPOSE 8000
 
 # Run the backend directly using PORT from environment
-# Add debugging to see what's happening
-CMD sh -c "echo 'Starting FastAPI on port:' $PORT && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+CMD sh -c "python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"
