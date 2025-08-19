@@ -11,6 +11,14 @@ ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://loc
 if os.getenv("FRONTEND_URL"):
     ALLOWED_ORIGINS.append(os.getenv("FRONTEND_URL"))
 
+# Add common Vercel URLs
+# In production, set FRONTEND_URL environment variable instead
+ALLOWED_ORIGINS.extend([
+    "https://mcp-client-proto-frontend.vercel.app",
+    "https://mcp-client-proto-alexmeckes.vercel.app",
+    "https://mcp-client-proto.vercel.app"
+])
+
 # MCPD removed - using remote servers only
 MCPD_ENABLED = False  # MCPD is no longer used
 MCPD_BASE_URL = None  # Not needed anymore
