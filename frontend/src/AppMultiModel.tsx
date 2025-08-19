@@ -563,7 +563,7 @@ function AppMultiModel() {
                   <div className="flex items-center gap-2">
                     {server.tools && server.tools.length > 0 && (
                       <span className="text-xs text-gray-500">
-                        {server.tools.length} tool{server.tools.length !== 1 ? 's' : ''}
+                        {server.tools.length} tool{server.tools.length !== 1 ? 's' : ''} available
                       </span>
                     )}
                     <input
