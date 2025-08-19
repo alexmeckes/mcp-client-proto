@@ -358,36 +358,14 @@ class ComposioIntegration:
                 print(f"🔧 Getting auth configs for {app_name}")
                 logger.info(f"Getting auth configs for {app_name}")
                 
-                # Try different possible auth config endpoints
-                endpoints_to_try = [
-                    "https://backend.composio.dev/api/v1/auth-configs",
-                    "https://backend.composio.dev/api/v2/auth-configs", 
-                    "https://backend.composio.dev/api/v1/integrations/{}/auth-configs".format(app_name.upper()),
-                    "https://backend.composio.dev/api/v1/apps/{}/auth-configs".format(app_name.upper())
-                ]
-                
-                response = None
-                for endpoint in endpoints_to_try:
-                    try:
-                        print(f"🔧 Trying auth config endpoint: {endpoint}")
-                        response = await client.get(
-                            endpoint,
-                            headers=headers,
-                            params={"app": app_name.upper()} if "auth-configs" in endpoint and "{" not in endpoint else {},
-                            timeout=30.0
-                        )
-                        if response.status_code != 404:
-                            print(f"🔧 Endpoint {endpoint} returned {response.status_code}")
-                            break
-                        else:
-                            print(f"🔧 Endpoint {endpoint} not found (404)")
-                    except Exception as e:
-                        print(f"🔧 Endpoint {endpoint} failed: {e}")
-                        continue
-                
-                if not response:
-                    print(f"🔧 All auth config endpoints failed, skipping auth config creation")
-                    return None
+                # Use the correct v3 API with underscore (not hyphen)
+                print(f"🔧 Getting auth configs from v3 API")
+                response = await client.get(
+                    "https://backend.composio.dev/api/v3/auth_configs",
+                    headers={**headers, "x-api-key": self.api_key},
+                    params={"app": app_name.upper()},
+                    timeout=30.0
+                )
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -401,15 +379,16 @@ class ComposioIntegration:
                             logger.info(f"Found existing auth config: {config_id}")
                             return config_id
                 
-                # If no existing config, create one
+                # If no existing config, create one using v3 API
                 logger.info(f"Creating new auth config for {app_name}")
                 create_response = await client.post(
-                    "https://backend.composio.dev/api/v1/auth-configs",
-                    headers=headers,
+                    "https://backend.composio.dev/api/v3/auth_configs",
+                    headers={**headers, "x-api-key": self.api_key},
                     json={
                         "app": app_name.upper(),
-                        "useComposioAuth": True,  # Use Composio's managed OAuth
-                        "name": f"{app_name} Auth Config"
+                        "use_composio_managed_auth": True,  # Use Composio's managed OAuth
+                        "name": f"{app_name} Auth Config",
+                        "redirect_uri": "https://backend.composio.dev/api/v3/toolkits/auth/callback"
                     },
                     timeout=30.0
                 )
@@ -623,11 +602,11 @@ class ComposioIntegration:
                     logger.info(f"Found connection_id: {connection_id}")
                     break
             
-            # Build the request data - try different formats
-            # Format 1: Simple with auth_config_ids and allowedTools
+            # Build the request data using v3 API format
+            # Use authConfigId (singular) as per v3 API specification
             data = {
                 "name": safe_name,  # Name with only allowed characters
-                "auth_config_ids": [auth_config_id],  # Required: auth config from OAuth connection
+                "authConfigId": auth_config_id,  # Required: auth config from OAuth connection (singular, not plural)
                 "apps": [app_name.upper()],  # Apps should be uppercase (GMAIL, SLACK, etc)
             }
             
@@ -641,76 +620,24 @@ class ComposioIntegration:
                 data["allowedTools"] = gmail_tools
                 logger.info(f"Specifying {len(gmail_tools)} Gmail tools for MCP server")
             
-            # Alternative format based on JS SDK example: serverConfig array
-            data_alt = {
-                "name": safe_name,
-                "serverConfig": [
-                    {
-                        "authConfigId": auth_config_id,
-                        "connectionId": connection_id,  # Include connection ID
-                        "allowedTools": gmail_tools if app_name.lower() == "gmail" else []
-                    }
-                ],
-                "options": {
-                    "isChatAuth": False  # We already have auth from OAuth
-                }
-            }
-            
             # Add entity_id to link the server to the user
             if user_id:
                 data["entity_id"] = user_id
             
-            logger.info(f"MCP server creation request (format 1): {json.dumps(data)}")
-            logger.info(f"MCP server creation request (format 2): {json.dumps(data_alt)}")
+            logger.info(f"MCP server creation request: {json.dumps(data, indent=2)}")
             
             async with httpx.AsyncClient() as client:
-                # Try the alternative format first (based on JS SDK)
-                logger.info("Trying alternative format with serverConfig")
+                # Use the correct v3 custom endpoint as recommended
+                logger.info("Creating MCP server using v3/mcp/servers/custom endpoint")
                 response = await client.post(
-                    "https://backend.composio.dev/api/v1/mcp/servers",
-                    headers=headers,
-                    json=data_alt,
+                    "https://backend.composio.dev/api/v3/mcp/servers/custom",
+                    headers={**headers, "x-api-key": self.api_key},
+                    json=data,
                     timeout=30.0
                 )
                 
-                # If alternative format fails, try custom endpoint
-                if response.status_code not in [200, 201]:
-                    logger.info(f"Alternative format failed with {response.status_code}, trying custom endpoint")
-                    response = await client.post(
-                        "https://backend.composio.dev/api/v1/mcp/servers/custom",
-                        headers=headers,
-                        json=data,
-                        timeout=30.0
-                    )
-                
-                # If custom endpoint fails, try standard endpoint
-                if response.status_code == 404:
-                    logger.info("Custom endpoint not found, trying standard endpoint")
-                    # For standard endpoint, include allowedTools
-                    standard_data = {
-                        "name": data["name"],
-                        "auth_config_ids": data["auth_config_ids"],
-                        "apps": data["apps"]
-                    }
-                    if "allowedTools" in data:
-                        standard_data["allowedTools"] = data["allowedTools"]
-                    
-                    response = await client.post(
-                        "https://backend.composio.dev/api/v1/mcp/servers",
-                        headers=headers,
-                        json=standard_data,
-                        timeout=30.0
-                    )
-                
-                # If v1 fails, try v3 endpoint
-                if response.status_code == 404:
-                    logger.info("v1 endpoint not found, trying v3 endpoint")
-                    response = await client.post(
-                        "https://backend.composio.dev/api/v3/mcp/servers",
-                        headers=headers,
-                        json=data,
-                        timeout=30.0
-                    )
+                # Check response status
+                logger.info(f"MCP server creation response status: {response.status_code}")
                 
                 if response.status_code == 200 or response.status_code == 201:
                     result = response.json()
@@ -718,15 +645,14 @@ class ComposioIntegration:
                     server_id = result.get("id") or result.get("server_id") or result.get("serverId")
                     
                     # After creating the server, we might need to create an instance
-                    # Check if we need to create an instance for the server to work
+                    # Use the correct v3 instance endpoint
                     if server_id and "instance_id" not in result:
                         logger.info(f"Creating instance for MCP server {server_id}")
                         instance_response = await client.post(
-                            f"https://backend.composio.dev/api/v1/mcp/servers/{server_id}/instances",
-                            headers=headers,
+                            f"https://backend.composio.dev/api/v3/mcp/servers/{server_id}/instances",
+                            headers={**headers, "x-api-key": self.api_key},
                             json={
-                                "entity_id": user_id,
-                                "enable_all_tools": True
+                                "user_id": user_id
                             },
                             timeout=30.0
                         )
