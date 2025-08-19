@@ -1177,7 +1177,11 @@ async def websocket_chat(websocket: WebSocket):
                                                     
                                                     if tools_from_api:
                                                         # Log first tool for debugging
-                                                        print(f"First tool from API: {json.dumps(tools_from_api[0], indent=2)[:300]}")
+                                                        try:
+                                                            print(f"First tool from API: {json.dumps(tools_from_api[0], indent=2)[:300]}")
+                                                        except Exception as e:
+                                                            print(f"Error logging first tool: {e}")
+                                                            print(f"First tool keys: {tools_from_api[0].keys() if tools_from_api else 'None'}")
                                                     
                                                     server_tools = []
                                                     for idx, api_tool in enumerate(tools_from_api):
@@ -1200,8 +1204,11 @@ async def websocket_chat(websocket: WebSocket):
                                                             continue
                                                     
                                                     print(f"Got {len(server_tools)} tools from Composio API for {app_name}")
+                                                    # Continue processing these tools
                                                 except Exception as e:
                                                     print(f"Error fetching tools from Composio API: {e}")
+                                                    import traceback
+                                                    print(f"Traceback: {traceback.format_exc()}")
                                                     server_tools = []
                                             else:
                                                 print(f"Could not extract user_id from URL")
@@ -1231,6 +1238,10 @@ async def websocket_chat(websocket: WebSocket):
                                     server_tools = []
                         
                         print(f"Server {server}: Found {len(server_tools)} tools")
+                        
+                        if not server_tools:
+                            print(f"No tools to process for {server}")
+                            continue
                         
                         for i, tool in enumerate(server_tools):
                             if i < 2:  # Log first 2 tools for debugging
