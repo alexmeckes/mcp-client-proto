@@ -1194,10 +1194,22 @@ async def websocket_chat(websocket: WebSocket):
                         
                         print(f"Server {server}: Found {len(server_tools)} tools")
                         
-                        for tool in server_tools:
+                        for i, tool in enumerate(server_tools):
+                            if i < 2:  # Log first 2 tools for debugging
+                                print(f"Tool {i}: {json.dumps(tool, indent=2)[:300]}")
                             # Convert to OpenAI tools format
-                            # Ensure parameters have properties field if type is object
-                            params = tool.get("inputSchema", {})
+                            # Get the input schema from various possible locations
+                            params = tool.get("inputSchema", tool.get("input_schema", tool.get("parameters", {})))
+                            
+                            # Ensure we have a valid schema structure
+                            if not params:
+                                params = {"type": "object", "properties": {}}
+                            elif not isinstance(params, dict):
+                                params = {"type": "object", "properties": {}}
+                            elif "type" not in params:
+                                params["type"] = "object"
+                            
+                            # Ensure object types have properties
                             if params.get("type") == "object" and "properties" not in params:
                                 params["properties"] = {}
                             
