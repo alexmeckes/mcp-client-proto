@@ -872,6 +872,15 @@ async def websocket_chat(websocket: WebSocket):
                                 elif config.auth_token:
                                     headers["Authorization"] = f"Bearer {config.auth_token}"
                                 
+                                # For Composio, try a simple GET first to see what's available
+                                if is_composio:
+                                    try:
+                                        get_response = await client.get(config.endpoint)
+                                        if get_response.status_code == 200:
+                                            print(f"GET response from {server}: {get_response.text[:200]}")
+                                    except:
+                                        pass
+                                
                                 # First, initialize the MCP session
                                 init_response = await client.post(
                                     config.endpoint,
@@ -889,14 +898,50 @@ async def websocket_chat(websocket: WebSocket):
                                 
                                 if init_response.status_code == 200:
                                     print(f"MCP session initialized for {server}")
+                                    # Check if tools are returned in the initialize response
+                                    try:
+                                        init_result = init_response.json()
+                                        if "result" in init_result and "tools" in init_result["result"]:
+                                            print(f"Tools found in initialize response!")
+                                            server_tools = init_result["result"]["tools"]
+                                            print(f"Found {len(server_tools)} tools from initialize")
+                                            # Skip the tools/list call if we already have tools
+                                            if server_tools:
+                                                continue
+                                    except:
+                                        pass
                                 
                                 try:
-                                    # Now fetch the tools
+                                    # Try different method names for Composio
+                                    # First try the standard MCP method
                                     tool_response = await client.post(
                                         config.endpoint,
                                         headers=headers,
                                         json={"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 2}
                                     )
+                                    
+                                    # Check if we got a "method not found" error
+                                    try:
+                                        test_result = tool_response.json()
+                                        if test_result.get("error", {}).get("code") == -32601:
+                                            print(f"tools/list not supported, trying listTools...")
+                                            # Try alternative method names
+                                            tool_response = await client.post(
+                                                config.endpoint,
+                                                headers=headers,
+                                                json={"jsonrpc": "2.0", "method": "listTools", "params": {}, "id": 3}
+                                            )
+                                            
+                                            test_result = tool_response.json()
+                                            if test_result.get("error", {}).get("code") == -32601:
+                                                print(f"listTools not supported, trying list...")
+                                                tool_response = await client.post(
+                                                    config.endpoint,
+                                                    headers=headers,
+                                                    json={"jsonrpc": "2.0", "method": "list", "params": {}, "id": 4}
+                                                )
+                                    except:
+                                        pass
                                     print(f"Tool response status: {tool_response.status_code}")
                                     if tool_response.status_code >= 400:
                                         print(f"Error response body: {tool_response.text[:500]}")
