@@ -84,15 +84,18 @@ class ComposioIntegration:
             entity = self.client.get_entity(id=user_id)
             connections = entity.get_connections()
             
-            return [
-                {
-                    "app": conn.appName,
-                    "status": conn.status,
-                    "connected_at": conn.createdAt,
-                    "connection_id": conn.id
-                }
-                for conn in connections
-            ]
+            result = []
+            for conn in connections:
+                # Log the actual connection object to understand its structure
+                logger.info(f"Connection object: app={conn.appName if hasattr(conn, 'appName') else 'N/A'}, id={conn.id if hasattr(conn, 'id') else 'N/A'}")
+                result.append({
+                    "app": conn.appName if hasattr(conn, 'appName') else None,
+                    "status": conn.status if hasattr(conn, 'status') else None,
+                    "connected_at": conn.createdAt if hasattr(conn, 'createdAt') else None,
+                    "connection_id": conn.id if hasattr(conn, 'id') else None
+                })
+            
+            return result
         except Exception as e:
             logger.error(f"Failed to get connections: {e}")
             return []
@@ -257,9 +260,15 @@ class ComposioIntegration:
             
             auth_config_id = None
             for conn in connections:
-                logger.info(f"Connection: app={conn.get('app')}, id={conn.get('connection_id')}")
-                if conn.get("app", "").lower() == app_name.lower():
-                    auth_config_id = conn.get("connection_id")
+                # Log all fields to see what's available
+                logger.info(f"Connection fields: {conn.keys()}")
+                logger.info(f"Connection: app={conn.get('app')}, appName={conn.get('appName')}, id={conn.get('connection_id')}, connectedAccountId={conn.get('connectedAccountId')}")
+                
+                # Try different field names for the app
+                conn_app = conn.get("app") or conn.get("appName") or ""
+                if conn_app.lower() == app_name.lower():
+                    # Try different field names for the auth config ID
+                    auth_config_id = conn.get("connection_id") or conn.get("connectedAccountId") or conn.get("id")
                     logger.info(f"Found auth_config_id for {app_name}: {auth_config_id}")
                     break
             
@@ -280,23 +289,13 @@ class ComposioIntegration:
             logger.info(f"MCP server creation request: {json.dumps(data)}")
             
             async with httpx.AsyncClient() as client:
-                # Try the v3 API endpoint which might handle apps better
+                # Try the v1 API endpoint (v3 might not exist)
                 response = await client.post(
-                    "https://backend.composio.dev/api/v3/mcp/servers",
+                    "https://backend.composio.dev/api/v1/mcp/servers",
                     headers=headers,
                     json=data,
                     timeout=30.0
                 )
-                
-                # If v3 fails, fallback to v1
-                if response.status_code == 404:
-                    logger.info("v3 MCP server endpoint not found, trying v1...")
-                    response = await client.post(
-                        "https://backend.composio.dev/api/v1/mcp/servers",
-                        headers=headers,
-                        json=data,
-                        timeout=30.0
-                    )
                 
                 if response.status_code == 200 or response.status_code == 201:
                     result = response.json()
