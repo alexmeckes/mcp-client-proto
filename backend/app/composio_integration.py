@@ -618,7 +618,7 @@ class ComposioIntegration:
                 logger.error(f"WARNING: No connection_id found - MCP server will have no tools!")
             
             # Log that we're using the working format
-            logger.info(f"Using WORKING format: toolkits + connection_ids (not authConfigId + apps)")
+            logger.info(f"🚀 Using WORKING format: toolkits + connection_ids (not authConfigId + apps) - FIXED!")
             
             logger.info(f"MCP server creation request: {json.dumps(data, indent=2)}")
             
