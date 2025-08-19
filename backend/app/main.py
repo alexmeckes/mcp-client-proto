@@ -1058,6 +1058,63 @@ async def websocket_chat(websocket: WebSocket):
                                         json=tools_request
                                     )
                                     
+                                    # If tools/list fails, try Composio-specific methods
+                                    if tool_response.status_code == 200:
+                                        try:
+                                            test_json = tool_response.json() if "application/json" in tool_response.headers.get("content-type", "") else None
+                                            if not test_json:
+                                                # Parse SSE
+                                                for line in tool_response.text.split('\n'):
+                                                    if line.startswith('data: '):
+                                                        test_json = json.loads(line[6:])
+                                                        break
+                                            
+                                            if test_json and test_json.get("error", {}).get("code") == -32601:
+                                                print("tools/list not found, trying Composio-specific methods...")
+                                                
+                                                # Try different possible methods
+                                                alternative_methods = [
+                                                    "composio/tools/list",
+                                                    "composio.tools.list", 
+                                                    "getTools",
+                                                    "get_tools",
+                                                    "listTools",
+                                                    "list_tools"
+                                                ]
+                                                
+                                                for alt_method in alternative_methods:
+                                                    print(f"Trying method: {alt_method}")
+                                                    alt_response = await client.post(
+                                                        config.endpoint,
+                                                        headers=tools_headers,
+                                                        json={
+                                                            "jsonrpc": "2.0",
+                                                            "method": alt_method,
+                                                            "params": {},
+                                                            "id": 100 + alternative_methods.index(alt_method)
+                                                        }
+                                                    )
+                                                    
+                                                    # Check if this method works
+                                                    try:
+                                                        alt_json = alt_response.json() if "application/json" in alt_response.headers.get("content-type", "") else None
+                                                        if not alt_json:
+                                                            for line in alt_response.text.split('\n'):
+                                                                if line.startswith('data: '):
+                                                                    alt_json = json.loads(line[6:])
+                                                                    break
+                                                        
+                                                        if alt_json and "result" in alt_json and "tools" in alt_json.get("result", {}):
+                                                            print(f"Found working method: {alt_method}")
+                                                            tool_response = alt_response
+                                                            break
+                                                        elif alt_json and not alt_json.get("error"):
+                                                            print(f"Method {alt_method} returned: {json.dumps(alt_json, indent=2)[:200]}")
+                                                    except:
+                                                        pass
+                                        except Exception as e:
+                                            print(f"Error checking alternative methods: {e}")
+                                    
                                     # Check if we got a "method not found" error
                                     try:
                                         test_result = tool_response.json()
