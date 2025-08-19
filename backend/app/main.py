@@ -1135,93 +1135,140 @@ async def websocket_chat(websocket: WebSocket):
                                         error_code = result["error"].get("code")
                                         print(f"Error code: {error_code}, Type: {type(error_code)}")
                                         
-                                        # For Composio, if tools/list fails, try different approaches
+                                        # For Composio, if tools/list fails, use hardcoded tools
                                         if error_code == -32601:  # Method not found
-                                            print(f"Composio MCP doesn't support tools/list")
+                                            print(f"Composio MCP doesn't support standard tools/list")
+                                            print(f"Using hardcoded tool definitions for Composio")
                                             
-                                            # Check if Composio exposes specific Gmail tools directly
-                                            # Try calling a known Gmail tool to see if it works
-                                            print(f"Testing if tools are executable without listing...")
-                                            test_tool_response = await client.post(
-                                                config.endpoint,
-                                                headers=tools_headers,
-                                                json={
-                                                    "jsonrpc": "2.0", 
-                                                    "method": "tools/call",
-                                                    "params": {
-                                                        "name": "GMAIL_GET_PROFILE",
-                                                        "arguments": {}
+                                            # Extract app name from server name
+                                            app_name = server.replace("composio-", "").upper()
+                                            print(f"App name: {app_name}")
+                                            
+                                            # Define tools based on the app
+                                            if app_name == "GMAIL":
+                                                # Define Gmail tools that Composio MCP supports
+                                                server_tools = [
+                                                    {
+                                                        "name": "GMAIL_SEND_EMAIL",
+                                                        "description": "Send an email via Gmail",
+                                                        "inputSchema": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "to": {"type": "array", "items": {"type": "string"}, "description": "Recipient email addresses"},
+                                                                "subject": {"type": "string", "description": "Email subject"},
+                                                                "body": {"type": "string", "description": "Email body"},
+                                                                "cc": {"type": "array", "items": {"type": "string"}, "description": "CC recipients"},
+                                                                "bcc": {"type": "array", "items": {"type": "string"}, "description": "BCC recipients"}
+                                                            },
+                                                            "required": ["to", "subject", "body"]
+                                                        }
                                                     },
-                                                    "id": 99
-                                                }
-                                            )
-                                            if test_tool_response.status_code == 200:
-                                                print(f"Tool execution might work! Response: {test_tool_response.text[:200]}")
-                                            
-                                            import time
-                                            request_id = f"REQ_{int(time.time()*1000) % 100000}"
-                                            print(f"[{request_id}] Now fetching from API as fallback...")
-                                            # Extract user_id from the URL
-                                            import re
-                                            user_match = re.search(r'user_id=([^&]+)', config.endpoint)
-                                            print(f"[{request_id}] Trying to extract user_id from: {config.endpoint}")
-                                            if user_match:
-                                                user_id = user_match.group(1)
-                                                print(f"[{request_id}] Extracted user_id: {user_id}")
-                                                # Extract app name from server name (composio-gmail -> gmail)
-                                                app_name = server.replace("composio-", "")
-                                                print(f"[{request_id}] App name: {app_name}")
-                                                
-                                                # Fetch tools from Composio API
-                                                try:
-                                                    tools_from_api = await composio.get_available_tools(user_id, app_name)
-                                                    print(f"[{request_id}] API returned {len(tools_from_api)} tools")
-                                                    
-                                                    if tools_from_api:
-                                                        # Log first tool for debugging
-                                                        try:
-                                                            print(f"First tool from API: {json.dumps(tools_from_api[0], indent=2)[:300]}")
-                                                        except Exception as e:
-                                                            print(f"Error logging first tool: {e}")
-                                                            print(f"First tool keys: {tools_from_api[0].keys() if tools_from_api else 'None'}")
-                                                    
-                                                    print(f"Starting to process {len(tools_from_api)} tools from API")
-                                                    server_tools = []
-                                                    for idx, api_tool in enumerate(tools_from_api):
-                                                        try:
-                                                            tool_name = api_tool.get("name", "unknown")
-                                                            tool_desc = api_tool.get("description", "")
-                                                            tool_schema = api_tool.get("parameters", api_tool.get("input_schema", {}))
-                                                            
-                                                            # Ensure the schema is a dict
-                                                            if not isinstance(tool_schema, dict):
-                                                                tool_schema = {}
-                                                            
-                                                            server_tools.append({
-                                                                "name": tool_name,
-                                                                "description": tool_desc,
-                                                                "inputSchema": tool_schema
-                                                            })
-                                                            
-                                                            if idx < 3:
-                                                                print(f"Processed tool {idx}: name='{tool_name}'")
-                                                        except Exception as e:
-                                                            print(f"Error processing tool {idx}: {e}")
-                                                            import traceback
-                                                            print(f"Traceback: {traceback.format_exc()}")
-                                                            continue
-                                                    
-                                                    print(f"Successfully converted {len(server_tools)} tools from Composio API")
-                                                    # Add a flag to skip the normal processing since we already have the tools
-                                                    # formatted correctly from the API
-                                                    skip_normal_processing = True
-                                                except Exception as e:
-                                                    print(f"Error fetching tools from Composio API: {e}")
-                                                    import traceback
-                                                    print(f"Traceback: {traceback.format_exc()}")
-                                                    server_tools = []
+                                                    {
+                                                        "name": "GMAIL_LIST_EMAILS",
+                                                        "description": "List emails from Gmail",
+                                                        "inputSchema": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "maxResults": {"type": "integer", "description": "Maximum number of emails", "default": 10},
+                                                                "query": {"type": "string", "description": "Search query"},
+                                                                "labelIds": {"type": "array", "items": {"type": "string"}, "description": "Label IDs to filter"}
+                                                            }
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "GMAIL_GET_EMAIL",
+                                                        "description": "Get a specific email by ID",
+                                                        "inputSchema": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "messageId": {"type": "string", "description": "Email message ID"}
+                                                            },
+                                                            "required": ["messageId"]
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "GMAIL_REPLY_TO_EMAIL",
+                                                        "description": "Reply to an email",
+                                                        "inputSchema": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "messageId": {"type": "string", "description": "Email ID to reply to"},
+                                                                "body": {"type": "string", "description": "Reply message"}
+                                                            },
+                                                            "required": ["messageId", "body"]
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "GMAIL_CREATE_DRAFT",
+                                                        "description": "Create an email draft",
+                                                        "inputSchema": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "to": {"type": "array", "items": {"type": "string"}, "description": "Recipients"},
+                                                                "subject": {"type": "string", "description": "Subject"},
+                                                                "body": {"type": "string", "description": "Body"}
+                                                            },
+                                                            "required": ["to", "subject", "body"]
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "GMAIL_DELETE_EMAIL",
+                                                        "description": "Delete an email",
+                                                        "inputSchema": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "messageId": {"type": "string", "description": "Email ID to delete"}
+                                                            },
+                                                            "required": ["messageId"]
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "GMAIL_MARK_EMAIL_AS_READ",
+                                                        "description": "Mark an email as read",
+                                                        "inputSchema": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "messageId": {"type": "string", "description": "Email ID"}
+                                                            },
+                                                            "required": ["messageId"]
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "GMAIL_MARK_EMAIL_AS_UNREAD",
+                                                        "description": "Mark an email as unread",
+                                                        "inputSchema": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "messageId": {"type": "string", "description": "Email ID"}
+                                                            },
+                                                            "required": ["messageId"]
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "GMAIL_FORWARD_EMAIL",
+                                                        "description": "Forward an email",
+                                                        "inputSchema": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "messageId": {"type": "string", "description": "Email ID to forward"},
+                                                                "to": {"type": "array", "items": {"type": "string"}, "description": "Recipients"},
+                                                                "message": {"type": "string", "description": "Forward message"}
+                                                            },
+                                                            "required": ["messageId", "to"]
+                                                        }
+                                                    },
+                                                    {
+                                                        "name": "GMAIL_GET_PROFILE",
+                                                        "description": "Get Gmail profile information",
+                                                        "inputSchema": {
+                                                            "type": "object",
+                                                            "properties": {}
+                                                        }
+                                                    }
+                                                ]
+                                                print(f"Defined {len(server_tools)} Gmail tools for MCP")
                                             else:
-                                                print(f"Could not extract user_id from URL")
+                                                print(f"No hardcoded tools for app: {app_name}")
                                                 server_tools = []
                                         else:
                                             print(f"Different error code, not attempting fallback")

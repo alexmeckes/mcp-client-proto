@@ -125,44 +125,78 @@ class ComposioIntegration:
             }
             
             # Build query parameters
+            # Start with no params to see what we get
             params = {}
+            
+            # Only add filtering if we have an app name
+            # Note: The Composio API might not support these filters
+            # We'll filter client-side if needed
             if app_name:
-                # Use search parameter to filter by app name
-                # The API doesn't have an 'apps' parameter, use search instead
-                params["search"] = app_name.lower()  # gmail, slack, etc.
+                # Log that we're attempting to filter
+                logger.info(f"Attempting to filter for app: {app_name}")
             
-            # Note: entity_id might not be a valid parameter either
-            # params["entity_id"] = user_id
-            
-            logger.info(f"Requesting tools with params: {params}")
+            logger.info(f"Requesting tools with params: {params} (filtering for {app_name} will be done client-side)")
             
             async with httpx.AsyncClient() as client:
-                # Try v3 API first, then fallback to v1
-                url = "https://backend.composio.dev/api/v3/tools"
-                logger.info(f"Calling: {url} with params: {params}")
-                response = await client.get(
-                    url,
-                    headers=headers,
-                    params=params,
-                    timeout=30.0
-                )
+                # Try entity-specific endpoint first if we have a user_id
+                if user_id and app_name:
+                    # Try entity-specific tools endpoint
+                    entity_url = f"https://backend.composio.dev/api/v1/entity/{user_id}/tools"
+                    logger.info(f"Trying entity-specific endpoint: {entity_url}")
+                    try:
+                        response = await client.get(
+                            entity_url,
+                            headers=headers,
+                            params={"appName": app_name.upper()},
+                            timeout=30.0
+                        )
+                        if response.status_code == 200:
+                            logger.info("Successfully got tools from entity endpoint")
+                        else:
+                            logger.info(f"Entity endpoint returned {response.status_code}, falling back to general endpoint")
+                            response = None
+                    except Exception as e:
+                        logger.info(f"Entity endpoint failed: {e}, falling back to general endpoint")
+                        response = None
+                else:
+                    response = None
                 
-                # If v3 fails, try v1
-                if response.status_code == 404:
-                    logger.info("v3 API not found, trying v1...")
+                # Fallback to general tools endpoint
+                if response is None or response.status_code != 200:
+                    # Try v3 API first, then fallback to v1
+                    url = "https://backend.composio.dev/api/v3/tools"
+                    logger.info(f"Calling: {url} with params: {params}")
                     response = await client.get(
-                        "https://backend.composio.dev/api/v1/tools",
+                        url,
                         headers=headers,
                         params=params,
                         timeout=30.0
                     )
+                    
+                    # If v3 fails, try v1
+                    if response.status_code == 404:
+                        logger.info("v3 API not found, trying v1...")
+                        response = await client.get(
+                            "https://backend.composio.dev/api/v1/tools",
+                            headers=headers,
+                            params=params,
+                            timeout=30.0
+                        )
+                
+                logger.info(f"API response status: {response.status_code}")
                 
                 if response.status_code == 200:
                     data = response.json()
                     logger.info(f"API response keys: {data.keys()}")
+                    logger.info(f"API response type: {type(data)}")
                     
-                    # Try different possible response formats
-                    tools = data.get("items", data.get("tools", data.get("data", [])))
+                    # Handle if response is a list directly
+                    if isinstance(data, list):
+                        tools = data
+                        logger.info(f"Response is a list with {len(tools)} tools")
+                    else:
+                        # Try different possible response formats
+                        tools = data.get("items", data.get("tools", data.get("data", [])))
                     
                     # Log the raw response structure for debugging
                     if not tools and data:
@@ -174,6 +208,12 @@ class ComposioIntegration:
                         if i < 3:
                             logger.info(f"Tool {i}: name={tool.get('name')}, app={tool.get('app')}, appName={tool.get('appName')}")
                         
+                        # Check if this tool belongs to the requested app
+                        tool_app = tool.get("app", tool.get("appName", "")).lower()
+                        if app_name and tool_app != app_name.lower():
+                            # Skip tools from other apps
+                            continue
+                        
                         result.append({
                             "name": tool.get("name", ""),
                             "description": tool.get("description", ""),
@@ -182,8 +222,14 @@ class ComposioIntegration:
                         })
                     
                     # Log app distribution
-                    apps_found = set(t["app"] for t in result)
+                    apps_found = set(t["app"] for t in result) if result else set()
                     logger.info(f"Found {len(result)} tools for {app_name or 'all apps'}, apps present: {apps_found}")
+                    
+                    # If no tools found for the specific app, log all apps seen
+                    if app_name and len(result) == 0:
+                        all_apps = set(t.get("app", t.get("appName", "")).lower() for t in tools)
+                        logger.warning(f"No tools found for {app_name}. Apps in response: {all_apps}")
+                    
                     return result
                 else:
                     logger.error(f"Failed to get tools: {response.status_code} - {response.text[:200]}")
