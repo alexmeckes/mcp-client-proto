@@ -252,21 +252,35 @@ class ComposioIntegration:
             logger.info(f"Creating MCP server for {app_name} with entity {user_id}")
             
             # Create MCP server with the connected app
+            # Try including more explicit configuration
             data = {
                 "apps": [app_name.upper()],  # Apps should be uppercase (GMAIL, SLACK, etc)
                 "entity_id": user_id,
-                "name": f"{app_name}_mcp_{user_id[:8]}"  # Unique name for the server
+                "name": f"{app_name}_mcp_{user_id[:8]}",  # Unique name for the server
+                "enabled": True,  # Explicitly enable the server
+                "include_tools": True  # Try to explicitly include tools
             }
             
             logger.info(f"MCP server creation request: {json.dumps(data)}")
             
             async with httpx.AsyncClient() as client:
+                # Try the v3 API endpoint which might handle apps better
                 response = await client.post(
-                    "https://backend.composio.dev/api/v1/mcp/servers",
+                    "https://backend.composio.dev/api/v3/mcp/servers",
                     headers=headers,
                     json=data,
                     timeout=30.0
                 )
+                
+                # If v3 fails, fallback to v1
+                if response.status_code == 404:
+                    logger.info("v3 MCP server endpoint not found, trying v1...")
+                    response = await client.post(
+                        "https://backend.composio.dev/api/v1/mcp/servers",
+                        headers=headers,
+                        json=data,
+                        timeout=30.0
+                    )
                 
                 if response.status_code == 200 or response.status_code == 201:
                     result = response.json()

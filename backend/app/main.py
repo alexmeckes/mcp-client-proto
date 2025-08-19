@@ -212,6 +212,15 @@ async def add_composio_mcp_server(request: AddMCPServerRequest):
         # Use the proper MCP URL format with /mcp path and user_id parameter
         mcp_url = f"https://mcp.composio.dev/composio/server/{server_uuid}/mcp?user_id={request.user_id}"
         print(f"Using existing MCP server {server_uuid} for {request.app_name}")
+        
+        # Try to update/recreate the server to ensure it has apps configured
+        print(f"Attempting to recreate/update server to ensure apps are configured...")
+        server_result = await composio.create_mcp_server(request.user_id, request.app_name)
+        if server_result:
+            server_uuid = server_result["server_id"]
+            mcp_url = server_result["url"]
+            mcp_server_mappings[mapping_key] = server_uuid
+            print(f"Updated MCP server {server_uuid} for {request.app_name}")
     else:
         # Create a new MCP server instance via Composio API
         server_result = await composio.create_mcp_server(request.user_id, request.app_name)
