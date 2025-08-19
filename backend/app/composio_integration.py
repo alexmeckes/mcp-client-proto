@@ -50,15 +50,57 @@ class ComposioIntegration:
             # Create or get entity for this user
             entity = self.client.get_entity(id=user_id)
             
+            # First, get or create an auth config for this app
+            # This ensures we have a proper auth_config_id for MCP server creation
+            auth_config_id = None
+            try:
+                # Try to get the default Composio auth config
+                from composio.client.collections import AuthConfigManager
+                auth_manager = AuthConfigManager(self.client)
+                
+                # Get existing auth configs for the app
+                auth_configs = auth_manager.get(app=app_name.upper())
+                if auth_configs and len(auth_configs) > 0:
+                    auth_config_id = auth_configs[0].id
+                    logger.info(f"Using existing auth config: {auth_config_id}")
+                else:
+                    # Create a new auth config using Composio's managed auth
+                    new_config = auth_manager.create(
+                        app=app_name.upper(),
+                        use_composio_auth=True
+                    )
+                    auth_config_id = new_config.id if hasattr(new_config, 'id') else None
+                    logger.info(f"Created new auth config: {auth_config_id}")
+            except Exception as e:
+                logger.warning(f"Could not get/create auth config: {e}")
+                # Continue without auth_config_id - will use Composio defaults
+            
             # Initiate connection for the specific app
-            connection_request = entity.initiate_connection(
-                app_name=app_name.upper(),
-                redirect_url=callback_url
-            )
+            # If we have an auth_config_id, use it
+            if auth_config_id:
+                connection_request = entity.initiate_connection(
+                    app_name=app_name.upper(),
+                    redirect_url=callback_url,
+                    auth_config_id=auth_config_id  # Specify which auth config to use
+                )
+            else:
+                # Fallback to default
+                connection_request = entity.initiate_connection(
+                    app_name=app_name.upper(),
+                    redirect_url=callback_url
+                )
+            
+            # Store the auth_config_id for later use
+            if auth_config_id and user_id and app_name:
+                # Store in a class variable for retrieval after OAuth
+                if not hasattr(self, 'auth_config_mapping'):
+                    self.auth_config_mapping = {}
+                self.auth_config_mapping[f"{user_id}:{app_name}"] = auth_config_id
             
             return {
                 "redirect_url": connection_request.redirectUrl,
                 "connection_id": connection_request.connectedAccountId if hasattr(connection_request, 'connectedAccountId') else None,
+                "auth_config_id": auth_config_id,  # Include auth_config_id
                 "user_id": user_id,
                 "app": app_name
             }
@@ -319,50 +361,81 @@ class ComposioIntegration:
             # First check if the user has this app connected and get auth_config_id
             logger.info(f"Creating MCP server for {app_name} with entity {user_id}")
             
-            # Get the user's connections to find the auth_config_id
-            connections = await self.get_user_connections(user_id)
-            logger.info(f"Found {len(connections)} connections for user")
-            
             auth_config_id = None
-            for conn in connections:
-                # Log all fields to see what's available
-                logger.info(f"Connection fields: {conn.keys()}")
-                logger.info(f"Connection details: {json.dumps(conn, indent=2)[:500]}")
+            
+            # First check if we have a stored auth_config_id from OAuth initiation
+            if hasattr(self, 'auth_config_mapping'):
+                mapping_key = f"{user_id}:{app_name}"
+                if mapping_key in self.auth_config_mapping:
+                    auth_config_id = self.auth_config_mapping[mapping_key]
+                    logger.info(f"Using stored auth_config_id from OAuth: {auth_config_id}")
+            
+            # If not found, try to get from connections
+            if not auth_config_id:
+                # Get the user's connections to find the auth_config_id
+                connections = await self.get_user_connections(user_id)
+                logger.info(f"Found {len(connections)} connections for user")
                 
-                # Try different field names for the app
-                conn_app = conn.get("app") or conn.get("appName") or ""
-                if conn_app.lower() == app_name.lower():
-                    # Look for auth_config_id in different fields
-                    # It should start with "ac_" according to Composio docs
-                    possible_fields = ["auth_config_id", "authConfigId", "auth_config", "authConfig"]
-                    for field in possible_fields:
-                        if field in conn and conn[field] and str(conn[field]).startswith("ac_"):
-                            auth_config_id = conn[field]
-                            logger.info(f"Found auth_config_id in field '{field}': {auth_config_id}")
-                            break
+                for conn in connections:
+                    # Log all fields to see what's available
+                    logger.info(f"Connection fields: {conn.keys()}")
+                    logger.info(f"Connection details: {json.dumps(conn, indent=2)[:500]}")
                     
-                    # If not found, log warning and try connection_id as fallback
-                    if not auth_config_id:
-                        logger.warning(f"No auth_config_id (starting with 'ac_') found in connection")
-                        # Use connection_id as fallback (might not work)
-                        auth_config_id = conn.get("connection_id") or conn.get("connectedAccountId") or conn.get("id")
-                        logger.warning(f"Using fallback ID (may not work): {auth_config_id}")
-                    break
+                    # Try different field names for the app
+                    conn_app = conn.get("app") or conn.get("appName") or ""
+                    if conn_app.lower() == app_name.lower():
+                        # Look for auth_config_id in different fields
+                        # It should start with "ac_" according to Composio docs
+                        possible_fields = ["auth_config_id", "authConfigId", "auth_config", "authConfig"]
+                        for field in possible_fields:
+                            if field in conn and conn[field] and str(conn[field]).startswith("ac_"):
+                                auth_config_id = conn[field]
+                                logger.info(f"Found auth_config_id in field '{field}': {auth_config_id}")
+                                break
+                        
+                        # If not found, log warning and try connection_id as fallback
+                        if not auth_config_id:
+                            logger.warning(f"No auth_config_id (starting with 'ac_') found in connection")
+                            # Use connection_id as fallback (might not work)
+                            auth_config_id = conn.get("connection_id") or conn.get("connectedAccountId") or conn.get("id")
+                            logger.warning(f"Using fallback ID (may not work): {auth_config_id}")
+                        break
             
             if not auth_config_id:
                 # Try to get or create auth config for the app
                 logger.warning(f"No auth_config_id found in connections, attempting to fetch/create one")
                 
                 try:
-                    # Try to get auth configs for the app
+                    # First, try to get the default Composio auth config for the app
+                    # This is what gets used when you do OAuth through Composio
                     async with httpx.AsyncClient() as client:
-                        # Try to get existing auth configs
-                        auth_response = await client.get(
-                            f"https://backend.composio.dev/api/v1/auth-configs",
-                            headers=headers,
-                            params={"app": app_name.upper()},
-                            timeout=30.0
-                        )
+                        # Get auth configs using the Composio SDK approach
+                        logger.info(f"Getting default auth config for {app_name}")
+                        
+                        # Try using the SDK to get the auth config
+                        if self.client:
+                            try:
+                                # Get the default auth config using Composio SDK
+                                from composio.client.collections import AuthConfigManager
+                                auth_manager = AuthConfigManager(self.client)
+                                
+                                # Get or create default auth config for the app
+                                auth_configs = auth_manager.get(app=app_name.upper())
+                                if auth_configs and len(auth_configs) > 0:
+                                    auth_config_id = auth_configs[0].id if hasattr(auth_configs[0], 'id') else None
+                                    logger.info(f"Found auth config via SDK: {auth_config_id}")
+                            except Exception as e:
+                                logger.error(f"SDK approach failed: {e}")
+                        
+                        # If SDK didn't work, try API
+                        if not auth_config_id:
+                            # Try to get existing auth configs via API
+                            auth_response = await client.get(
+                                f"https://backend.composio.dev/api/v1/auth-configs",
+                                headers=headers,
+                                params={"app": app_name.upper()},
+                                timeout=30.0
+                            )
                         
                         if auth_response.status_code == 200:
                             auth_configs = auth_response.json()
