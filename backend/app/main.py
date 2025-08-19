@@ -974,15 +974,24 @@ async def websocket_chat(websocket: WebSocket):
                                                         
                                                         # Check for tools in result.tools
                                                         if "result" in init_result:
+                                                            # Log the ENTIRE init result to see what we're getting
+                                                            print(f"FULL INIT RESULT: {json.dumps(init_result, indent=2)}")
+                                                            
                                                             # Store the negotiated protocol version
                                                             if "protocolVersion" in init_result["result"]:
                                                                 negotiated_protocol = init_result["result"]["protocolVersion"]
                                                                 print(f"Negotiated protocol version: {negotiated_protocol}")
                                                             
+                                                            # Check various possible locations for tools
                                                             if "tools" in init_result["result"] and isinstance(init_result["result"]["tools"], list):
-                                                                print(f"Tools found as array in initialize response!")
+                                                                print(f"Tools found as array in result.tools!")
                                                                 server_tools = init_result["result"]["tools"]
                                                                 print(f"Found {len(server_tools)} tools from initialize")
+                                                                break
+                                                            elif "serverInfo" in init_result["result"] and "tools" in init_result["result"]["serverInfo"]:
+                                                                print(f"Tools found in serverInfo.tools!")
+                                                                server_tools = init_result["result"]["serverInfo"]["tools"]
+                                                                print(f"Found {len(server_tools)} tools from serverInfo")
                                                                 break
                                                             # Also check if tools is empty dict (meaning we need to call tools/list)
                                                             elif "capabilities" in init_result["result"] and "tools" in init_result["result"]["capabilities"]:
