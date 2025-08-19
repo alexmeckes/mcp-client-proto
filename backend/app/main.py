@@ -978,6 +978,10 @@ async def websocket_chat(websocket: WebSocket):
                                                             # Also check if tools is empty dict (meaning we need to call tools/list)
                                                             elif "capabilities" in init_result["result"] and "tools" in init_result["result"]["capabilities"]:
                                                                 print(f"Server has tools capability but no tools in init response")
+                                                                # Check if capabilities.tools contains the actual tools
+                                                                cap_tools = init_result["result"]["capabilities"]["tools"]
+                                                                if isinstance(cap_tools, dict) and len(cap_tools) > 0:
+                                                                    print(f"Found tools in capabilities: {list(cap_tools.keys())[:5]}")
                                                                 # Will need to call tools/list
                                                     except:
                                                         continue
@@ -1032,10 +1036,17 @@ async def websocket_chat(websocket: WebSocket):
                                     
                                     # Try different method names for Composio
                                     # First try the standard MCP method
+                                    # According to MCP spec, tools/list doesn't need params
+                                    tools_request = {
+                                        "jsonrpc": "2.0", 
+                                        "method": "tools/list", 
+                                        "id": 2
+                                    }
+                                    print(f"Sending tools/list request: {json.dumps(tools_request)}")
                                     tool_response = await client.post(
                                         config.endpoint,
                                         headers=tools_headers,
-                                        json={"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 2}
+                                        json=tools_request
                                     )
                                     
                                     # Check if we got a "method not found" error
