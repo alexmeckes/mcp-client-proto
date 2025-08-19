@@ -198,6 +198,28 @@ class AddMCPServerRequest(BaseModel):
     user_id: str
     app_name: str
 
+@app.post("/composio/fix-auth-config")
+async def fix_auth_config(request: AddMCPServerRequest):
+    """Ensure we have a proper auth_config_id for an app"""
+    print(f"Fixing auth config for {request.app_name}")
+    
+    # Get or create proper auth config
+    auth_config_id = await composio.get_or_create_auth_config(request.app_name)
+    
+    if auth_config_id and auth_config_id.startswith("ac_"):
+        print(f"Got proper auth_config_id: {auth_config_id}")
+        return {
+            "success": True,
+            "auth_config_id": auth_config_id,
+            "message": f"Auth config ready for {request.app_name}"
+        }
+    else:
+        print(f"Failed to get proper auth config for {request.app_name}")
+        return {
+            "success": False,
+            "message": "Could not get or create auth config"
+        }
+
 @app.post("/composio/add-mcp-server")
 async def add_composio_mcp_server(request: AddMCPServerRequest):
     """Add a Composio app as an MCP server by creating a server instance"""

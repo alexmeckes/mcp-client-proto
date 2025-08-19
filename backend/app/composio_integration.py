@@ -334,6 +334,78 @@ class ComposioIntegration:
                 "error": str(e)
             }
     
+    async def get_or_create_auth_config(self, app_name: str) -> Optional[str]:
+        """
+        Get or create an auth config for an app.
+        This is REQUIRED for MCP servers to expose tools.
+        
+        Returns:
+            auth_config_id starting with 'ac_' or None
+        """
+        if not self.api_key:
+            logger.error("No API key configured")
+            return None
+            
+        try:
+            import httpx
+            headers = {
+                "X-API-Key": self.api_key,
+                "Content-Type": "application/json"
+            }
+            
+            async with httpx.AsyncClient() as client:
+                # First, try to get existing auth configs
+                logger.info(f"Getting auth configs for {app_name}")
+                
+                # Try the auth-configs endpoint
+                response = await client.get(
+                    "https://backend.composio.dev/api/v1/auth-configs",
+                    headers=headers,
+                    params={"app": app_name.upper()},
+                    timeout=30.0
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    logger.info(f"Auth configs response: {json.dumps(data, indent=2)[:500]}")
+                    
+                    # Look for existing auth config
+                    configs = data if isinstance(data, list) else data.get("items", data.get("data", []))
+                    for config in configs:
+                        config_id = config.get("id", config.get("authConfigId"))
+                        if config_id and config_id.startswith("ac_"):
+                            logger.info(f"Found existing auth config: {config_id}")
+                            return config_id
+                
+                # If no existing config, create one
+                logger.info(f"Creating new auth config for {app_name}")
+                create_response = await client.post(
+                    "https://backend.composio.dev/api/v1/auth-configs",
+                    headers=headers,
+                    json={
+                        "app": app_name.upper(),
+                        "useComposioAuth": True,  # Use Composio's managed OAuth
+                        "name": f"{app_name} Auth Config"
+                    },
+                    timeout=30.0
+                )
+                
+                if create_response.status_code in [200, 201]:
+                    config = create_response.json()
+                    config_id = config.get("id", config.get("authConfigId"))
+                    if config_id and config_id.startswith("ac_"):
+                        logger.info(f"Created new auth config: {config_id}")
+                        return config_id
+                    else:
+                        logger.error(f"Created config but got invalid ID: {config_id}")
+                else:
+                    logger.error(f"Failed to create auth config: {create_response.status_code} - {create_response.text[:200]}")
+                    
+        except Exception as e:
+            logger.error(f"Error getting/creating auth config: {e}")
+            
+        return None
+    
     async def create_mcp_server(self, user_id: str, app_name: str) -> Optional[Dict[str, str]]:
         """
         Create an MCP server using Composio SDK (proper way)
@@ -461,43 +533,46 @@ class ComposioIntegration:
             
             auth_config_id = None
             
-            # First check if we have a stored auth_config_id from OAuth initiation
-            if hasattr(self, 'auth_config_mapping'):
-                mapping_key = f"{user_id}:{app_name}"
-                if mapping_key in self.auth_config_mapping:
-                    auth_config_id = self.auth_config_mapping[mapping_key]
-                    logger.info(f"Using stored auth_config_id from OAuth: {auth_config_id}")
+            # CRITICAL: We MUST have a proper auth_config_id for tools to work
+            # Always try to get or create one first
+            logger.info(f"Ensuring we have proper auth_config_id for {app_name}")
+            auth_config_id = await self.get_or_create_auth_config(app_name)
             
-            # If not found, try to get from connections
-            if not auth_config_id:
-                # Get the user's connections to find the auth_config_id
-                connections = await self.get_user_connections(user_id)
-                logger.info(f"Found {len(connections)} connections for user")
+            if not auth_config_id or not auth_config_id.startswith("ac_"):
+                logger.error(f"Failed to get proper auth_config_id for {app_name}")
+                logger.error("Without auth_config_id, MCP server will have no tools!")
+                # Try fallback methods
                 
-                for conn in connections:
-                    # Log all fields to see what's available
-                    logger.info(f"Connection fields: {conn.keys()}")
-                    logger.info(f"Connection details: {json.dumps(conn, indent=2)[:500]}")
+                # Check if we have a stored auth_config_id from OAuth initiation
+                if hasattr(self, 'auth_config_mapping'):
+                    mapping_key = f"{user_id}:{app_name}"
+                    if mapping_key in self.auth_config_mapping:
+                        auth_config_id = self.auth_config_mapping[mapping_key]
+                        logger.info(f"Using stored auth_config_id from OAuth: {auth_config_id}")
+                
+                # If still not found, check connections
+                if not auth_config_id or not auth_config_id.startswith("ac_"):
+                    connections = await self.get_user_connections(user_id)
+                    logger.info(f"Found {len(connections)} connections for user")
                     
-                    # Try different field names for the app
-                    conn_app = conn.get("app") or conn.get("appName") or ""
-                    if conn_app.lower() == app_name.lower():
-                        # Look for auth_config_id in different fields
-                        # It should start with "ac_" according to Composio docs
-                        possible_fields = ["auth_config_id", "authConfigId", "auth_config", "authConfig"]
-                        for field in possible_fields:
-                            if field in conn and conn[field] and str(conn[field]).startswith("ac_"):
-                                auth_config_id = conn[field]
-                                logger.info(f"Found auth_config_id in field '{field}': {auth_config_id}")
-                                break
-                        
-                        # If not found, log warning and try connection_id as fallback
-                        if not auth_config_id:
-                            logger.warning(f"No auth_config_id (starting with 'ac_') found in connection")
-                            # Use connection_id as fallback (might not work)
-                            auth_config_id = conn.get("connection_id") or conn.get("connectedAccountId") or conn.get("id")
-                            logger.warning(f"Using fallback ID (may not work): {auth_config_id}")
-                        break
+                    for conn in connections:
+                        conn_app = conn.get("app") or conn.get("appName") or ""
+                        if conn_app.lower() == app_name.lower():
+                            # Look for auth_config_id
+                            possible_fields = ["auth_config_id", "authConfigId", "auth_config", "authConfig"]
+                            for field in possible_fields:
+                                if field in conn and conn[field] and str(conn[field]).startswith("ac_"):
+                                    auth_config_id = conn[field]
+                                    logger.info(f"Found auth_config_id in connection: {auth_config_id}")
+                                    break
+                            
+                            if not auth_config_id or not auth_config_id.startswith("ac_"):
+                                # Last resort - use connection ID (won't work for tools)
+                                connection_id = conn.get("connection_id") or conn.get("id")
+                                logger.error(f"No proper auth_config_id found! Using connection_id: {connection_id}")
+                                logger.error("WARNING: Server will be created but tools won't work!")
+                                auth_config_id = connection_id
+                            break
             
             if not auth_config_id:
                 # Try to get or create auth config for the app
@@ -606,6 +681,15 @@ class ComposioIntegration:
                 "GMAIL_LIST_THREADS"
             ]
             
+            # Get the connection_id for this user and app
+            connection_id = None
+            connections = await self.get_user_connections(user_id)
+            for conn in connections:
+                if conn.get("app", "").lower() == app_name.lower():
+                    connection_id = conn.get("connection_id") or conn.get("id")
+                    logger.info(f"Found connection_id: {connection_id}")
+                    break
+            
             # Build the request data - try different formats
             # Format 1: Simple with auth_config_ids and allowedTools
             data = {
@@ -613,6 +697,11 @@ class ComposioIntegration:
                 "auth_config_ids": [auth_config_id],  # Required: auth config from OAuth connection
                 "apps": [app_name.upper()],  # Apps should be uppercase (GMAIL, SLACK, etc)
             }
+            
+            # Add connection_id if we have it
+            if connection_id:
+                data["connection_ids"] = [connection_id]
+                logger.info(f"Including connection_id: {connection_id}")
             
             # Add allowedTools if this is Gmail
             if app_name.lower() == "gmail":
@@ -625,6 +714,7 @@ class ComposioIntegration:
                 "serverConfig": [
                     {
                         "authConfigId": auth_config_id,
+                        "connectionId": connection_id,  # Include connection ID
                         "allowedTools": gmail_tools if app_name.lower() == "gmail" else []
                     }
                 ],
