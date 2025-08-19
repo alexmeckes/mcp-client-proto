@@ -362,7 +362,7 @@ class ComposioIntegration:
                 print(f"🔧 Getting auth configs from v3 API")
                 response = await client.get(
                     "https://backend.composio.dev/api/v3/auth_configs",
-                    headers={**headers, "x-api-key": self.api_key},
+                    headers=headers,  # Already contains X-API-Key
                     params={"app": app_name.upper()},
                     timeout=30.0
                 )
@@ -383,7 +383,7 @@ class ComposioIntegration:
                 logger.info(f"Creating new auth config for {app_name}")
                 create_response = await client.post(
                     "https://backend.composio.dev/api/v3/auth_configs",
-                    headers={**headers, "x-api-key": self.api_key},
+                    headers=headers,  # Already contains X-API-Key
                     json={
                         "app": app_name.upper(),
                         "use_composio_managed_auth": True,  # Use Composio's managed OAuth
@@ -631,7 +631,7 @@ class ComposioIntegration:
                 logger.info("Creating MCP server using v3/mcp/servers/custom endpoint")
                 response = await client.post(
                     "https://backend.composio.dev/api/v3/mcp/servers/custom",
-                    headers={**headers, "x-api-key": self.api_key},
+                    headers=headers,  # Already contains X-API-Key
                     json=data,
                     timeout=30.0
                 )
@@ -650,7 +650,7 @@ class ComposioIntegration:
                         logger.info(f"Creating instance for MCP server {server_id}")
                         instance_response = await client.post(
                             f"https://backend.composio.dev/api/v3/mcp/servers/{server_id}/instances",
-                            headers={**headers, "x-api-key": self.api_key},
+                            headers=headers,  # Already contains X-API-Key  
                             json={
                                 "user_id": user_id
                             },
