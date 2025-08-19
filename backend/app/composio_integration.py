@@ -181,7 +181,7 @@ class ComposioIntegration:
         Returns:
             MCP-compatible URL
         """
-        # Composio MCP endpoints follow this pattern
+        # Composio MCP endpoints - use the original format, let the backend handle redirects
         return f"https://mcp.composio.dev/{app_name.lower()}/mcp?customerId={user_id}"
     
     async def disconnect_app(self, user_id: str, connection_id: str) -> bool:

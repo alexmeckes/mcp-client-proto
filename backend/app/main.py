@@ -712,7 +712,7 @@ async def get_server_tools(server_name: str):
     # Check if it's a remote server
     if server_name in remote_mcp_servers:
         config = remote_mcp_servers[server_name]
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
             try:
                 headers = config.headers.copy()
                 
@@ -950,7 +950,7 @@ async def websocket_chat(websocket: WebSocket):
                         if server_name in remote_mcp_servers:
                             # Remote server execution
                             config = remote_mcp_servers[server_name]
-                            async with httpx.AsyncClient(timeout=30.0) as client:
+                            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
                                 try:
                                     headers = config.headers.copy()
                                     is_composio = "composio" in config.endpoint
