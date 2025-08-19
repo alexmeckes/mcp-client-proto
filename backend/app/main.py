@@ -933,6 +933,19 @@ async def websocket_chat(websocket: WebSocket):
                                 
                                 if init_response.status_code == 200:
                                     print(f"MCP session initialized for {server}")
+                                    
+                                    # Send initialized notification as required by MCP spec
+                                    initialized_response = await client.post(
+                                        config.endpoint,
+                                        headers=init_headers,
+                                        json={
+                                            "jsonrpc": "2.0",
+                                            "method": "notifications/initialized",
+                                            "params": {}
+                                        }
+                                    )
+                                    print(f"Sent initialized notification, status: {initialized_response.status_code}")
+                                    
                                     # Check content type
                                     content_type = init_response.headers.get("content-type", "")
                                     print(f"Init response content-type: {content_type}")
@@ -1057,8 +1070,12 @@ async def websocket_chat(websocket: WebSocket):
                                     except:
                                         pass
                                     print(f"Tool response status: {tool_response.status_code}")
+                                    print(f"Tool response headers: {dict(tool_response.headers)}")
+                                    print(f"Tool response content-type: {tool_response.headers.get('content-type', 'unknown')}")
                                     if tool_response.status_code >= 400:
                                         print(f"Error response body: {tool_response.text[:500]}")
+                                    else:
+                                        print(f"Tool response body (first 500 chars): {tool_response.text[:500]}")
                                 except httpx.HTTPError as e:
                                     print(f"HTTP error fetching tools from {server}: {e}")
                                     print(f"Request URL: {config.endpoint}")
