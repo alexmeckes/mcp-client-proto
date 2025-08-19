@@ -200,17 +200,11 @@ async def add_composio_mcp_server(request: AddMCPServerRequest):
     server_name = f"composio-{request.app_name}"
     
     # Add to remote MCP servers using the existing structure
-    # Check if we have a Composio API key to authenticate
-    composio_api_key = os.getenv("COMPOSIO_API_KEY", "")
-    headers = {"Content-Type": "application/json"}
-    if composio_api_key:
-        headers["X-API-Key"] = composio_api_key
-    
     remote_mcp_servers[server_name] = RemoteServerConfig(
         name=server_name,
         endpoint=mcp_url,
         auth_token=None,
-        headers=headers
+        headers={"Content-Type": "application/json"}
     )
     
     print(f"Added MCP server {server_name} with URL {mcp_url}")
@@ -839,10 +833,7 @@ async def websocket_chat(websocket: WebSocket):
                                 is_composio = "composio" in config.endpoint
                                 if is_composio:
                                     headers["Accept"] = "application/json, text/event-stream"
-                                    # Add Composio API key if available
-                                    composio_api_key = os.getenv("COMPOSIO_API_KEY", "")
-                                    if composio_api_key and "X-API-Key" not in headers:
-                                        headers["X-API-Key"] = composio_api_key
+                                    # Composio uses the customerId in the URL for auth
                                 elif config.auth_token:
                                     headers["Authorization"] = f"Bearer {config.auth_token}"
                                 
@@ -853,9 +844,13 @@ async def websocket_chat(websocket: WebSocket):
                                         json={"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 1}
                                     )
                                     print(f"Tool response status: {tool_response.status_code}")
+                                    if tool_response.status_code >= 400:
+                                        print(f"Error response body: {tool_response.text[:500]}")
                                 except httpx.HTTPError as e:
                                     print(f"HTTP error fetching tools from {server}: {e}")
                                     print(f"Request URL: {config.endpoint}")
+                                    if hasattr(e, 'response') and e.response:
+                                        print(f"Error response: {e.response.text[:500]}")
                                     raise
                                 
                                 # Handle Composio's SSE response

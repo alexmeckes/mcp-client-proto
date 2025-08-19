@@ -167,6 +167,29 @@ class ComposioIntegration:
                 "error": str(e)
             }
     
+    async def create_mcp_server(self, user_id: str, app_name: str) -> Optional[str]:
+        """
+        Create an MCP server instance for a connected app
+        
+        Args:
+            user_id: User identifier (entity ID in Composio)
+            app_name: Name of the app
+        
+        Returns:
+            MCP server URL or None if failed
+        """
+        if not self.is_configured():
+            return None
+            
+        try:
+            # For now, return a simple URL format
+            # TODO: Call Composio API to create proper MCP server instance
+            # The actual implementation would use self.client to create the server
+            return f"https://mcp.composio.dev/{app_name.lower()}/mcp?entityId={user_id}"
+        except Exception as e:
+            logger.error(f"Failed to create MCP server: {e}")
+            return None
+    
     def get_mcp_url_for_app(self, user_id: str, app_name: str) -> str:
         """
         Generate MCP-compatible URL for a Composio app
@@ -175,14 +198,15 @@ class ComposioIntegration:
         to Composio services.
         
         Args:
-            user_id: User identifier (used as customer ID)
+            user_id: User identifier (used as entity ID)
             app_name: Name of the app
         
         Returns:
             MCP-compatible URL
         """
-        # Composio MCP endpoints - use the original format, let the backend handle redirects
-        return f"https://mcp.composio.dev/{app_name.lower()}/mcp?customerId={user_id}"
+        # For backward compatibility, return the URL format
+        # In production, should call create_mcp_server instead
+        return f"https://mcp.composio.dev/{app_name.lower()}/mcp?entityId={user_id}"
     
     async def disconnect_app(self, user_id: str, connection_id: str) -> bool:
         """
