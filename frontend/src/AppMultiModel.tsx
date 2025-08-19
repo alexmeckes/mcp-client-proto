@@ -125,7 +125,8 @@ function AppMultiModel() {
         name: typeof server === 'string' ? server : server.name,
         type: server.type || 'local',
         endpoint: server.endpoint,
-        selected: false,
+        // Auto-select Composio servers that are authenticated
+        selected: server.name?.startsWith('composio-') || false,
         tools: []
       }))
       setServers(serverList)
@@ -568,7 +569,13 @@ function AppMultiModel() {
                     <input
                       type="checkbox"
                       checked={server.selected}
-                      onChange={() => {}}
+                      onChange={() => {
+                        setServers(prev => prev.map(s => 
+                          s.name === server.name 
+                            ? { ...s, selected: !s.selected }
+                            : s
+                        ))
+                      }}
                       disabled={currentModel && !currentModel.supports_tools}
                       className="w-4 h-4"
                     />
