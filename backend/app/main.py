@@ -1180,12 +1180,25 @@ async def websocket_chat(websocket: WebSocket):
                                                         print(f"First tool from API: {json.dumps(tools_from_api[0], indent=2)[:300]}")
                                                     
                                                     server_tools = []
-                                                    for api_tool in tools_from_api:
-                                                        server_tools.append({
-                                                            "name": api_tool.get("name", "unknown"),
-                                                            "description": api_tool.get("description", ""),
-                                                            "inputSchema": api_tool.get("parameters", api_tool.get("input_schema", {}))
-                                                        })
+                                                    for idx, api_tool in enumerate(tools_from_api):
+                                                        try:
+                                                            tool_schema = api_tool.get("parameters", api_tool.get("input_schema", {}))
+                                                            # Ensure the schema is a dict
+                                                            if not isinstance(tool_schema, dict):
+                                                                tool_schema = {}
+                                                            
+                                                            server_tools.append({
+                                                                "name": api_tool.get("name", "unknown"),
+                                                                "description": api_tool.get("description", ""),
+                                                                "inputSchema": tool_schema
+                                                            })
+                                                            
+                                                            if idx < 2:
+                                                                print(f"Processed tool {idx}: {api_tool.get('name')}")
+                                                        except Exception as e:
+                                                            print(f"Error processing tool {idx}: {e}")
+                                                            continue
+                                                    
                                                     print(f"Got {len(server_tools)} tools from Composio API for {app_name}")
                                                 except Exception as e:
                                                     print(f"Error fetching tools from Composio API: {e}")
