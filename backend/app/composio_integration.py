@@ -602,27 +602,23 @@ class ComposioIntegration:
                     logger.info(f"Found connection_id: {connection_id}")
                     break
             
-            # Build the request data using v3 API format
-            # Use authConfigId (singular) as per v3 API specification
+            # Build the request data using WORKING v3 API format
+            # We discovered that using toolkits + connection_ids works, NOT authConfigId + apps
             data = {
                 "name": safe_name,  # Name with only allowed characters
-                "authConfigId": auth_config_id,  # Required: auth config from OAuth connection (singular, not plural)
-                "apps": [app_name.upper()],  # Apps should be uppercase (GMAIL, SLACK, etc)
+                "toolkits": [app_name.upper()],  # Use toolkits, not apps - THIS IS THE FIX
+                "entity_id": user_id,  # Link to user
             }
             
-            # Add connection_id if we have it
+            # Add connection_id if we have it - THIS IS CRITICAL for tools to work
             if connection_id:
                 data["connection_ids"] = [connection_id]
-                logger.info(f"Including connection_id: {connection_id}")
+                logger.info(f"Including connection_id: {connection_id} - REQUIRED for tools to work")
+            else:
+                logger.error(f"WARNING: No connection_id found - MCP server will have no tools!")
             
-            # Add toolkits field as required by v3 API
-            if app_name.lower() == "gmail":
-                data["toolkits"] = ["GMAIL"]  # Just specify the toolkit name
-                logger.info(f"Specifying GMAIL toolkit for MCP server")
-            
-            # Add entity_id to link the server to the user
-            if user_id:
-                data["entity_id"] = user_id
+            # Log that we're using the working format
+            logger.info(f"Using WORKING format: toolkits + connection_ids (not authConfigId + apps)")
             
             logger.info(f"MCP server creation request: {json.dumps(data, indent=2)}")
             
