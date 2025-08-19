@@ -1213,10 +1213,23 @@ async def websocket_chat(websocket: WebSocket):
                             if params.get("type") == "object" and "properties" not in params:
                                 params["properties"] = {}
                             
+                            # Clean up the tool name to match Anthropic's requirements
+                            # Must match pattern '^[a-zA-Z0-9_-]{1,128}$'
+                            # Replace any invalid characters with underscores
+                            tool_name = tool.get('name', 'unknown_tool')
+                            # Remove or replace invalid characters
+                            clean_name = ''.join(c if c.isalnum() or c in '_-' else '_' for c in tool_name)
+                            # Ensure server prefix is also clean
+                            clean_server = server.replace('-', '_')
+                            full_name = f"{clean_server}__{clean_name}"
+                            # Truncate if too long
+                            if len(full_name) > 128:
+                                full_name = full_name[:128]
+                            
                             tool_def = {
                                 "type": "function",
                                 "function": {
-                                    "name": f"{server}__{tool['name']}",
+                                    "name": full_name,
                                     "description": f"[{server}] {tool.get('description', '')}",
                                     "parameters": params
                                 }
