@@ -876,10 +876,11 @@ async def websocket_chat(websocket: WebSocket):
                                 if is_composio:
                                     try:
                                         get_response = await client.get(config.endpoint)
+                                        print(f"GET response status from {server}: {get_response.status_code}")
                                         if get_response.status_code == 200:
-                                            print(f"GET response from {server}: {get_response.text[:200]}")
-                                    except:
-                                        pass
+                                            print(f"GET response from {server}: {get_response.text[:500]}")
+                                    except Exception as e:
+                                        print(f"GET request failed: {e}")
                                 
                                 # First, initialize the MCP session
                                 init_response = await client.post(
@@ -901,6 +902,7 @@ async def websocket_chat(websocket: WebSocket):
                                     # Check if tools are returned in the initialize response
                                     try:
                                         init_result = init_response.json()
+                                        print(f"Initialize response: {json.dumps(init_result, indent=2)[:500]}")
                                         if "result" in init_result and "tools" in init_result["result"]:
                                             print(f"Tools found in initialize response!")
                                             server_tools = init_result["result"]["tools"]
@@ -908,8 +910,8 @@ async def websocket_chat(websocket: WebSocket):
                                             # Skip the tools/list call if we already have tools
                                             if server_tools:
                                                 continue
-                                    except:
-                                        pass
+                                    except Exception as e:
+                                        print(f"Error parsing init response: {e}")
                                 
                                 try:
                                     # Try different method names for Composio
