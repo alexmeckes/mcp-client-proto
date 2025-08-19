@@ -408,27 +408,75 @@ class ComposioIntegration:
             # Name must be 4-30 chars, only letters, numbers, spaces, and hyphens (no underscores)
             safe_name = f"{app_name}-mcp-{user_id[:8]}".replace("_", "-")
             
+            # Create MCP server with full configuration
+            # Based on Composio's API, we need to ensure tools are enabled
             data = {
                 "name": safe_name,  # Name with only allowed characters
                 "auth_config_ids": [auth_config_id],  # Required: auth config from OAuth connection
-                "apps": [app_name.upper()]  # Apps should be uppercase (GMAIL, SLACK, etc)
+                "apps": [app_name.upper()],  # Apps should be uppercase (GMAIL, SLACK, etc)
+                "enable_all_tools": True,  # Enable all tools for the apps
+                "auto_configure": True  # Auto-configure based on connected apps
             }
+            
+            # Add entity_id to link the server to the user
+            if user_id:
+                data["entity_id"] = user_id
             
             logger.info(f"MCP server creation request: {json.dumps(data)}")
             
             async with httpx.AsyncClient() as client:
-                # Try the v1 API endpoint (v3 might not exist)
+                # Try custom endpoint first for more control
+                logger.info("Trying custom MCP server endpoint for full tool configuration")
                 response = await client.post(
-                    "https://backend.composio.dev/api/v1/mcp/servers",
+                    "https://backend.composio.dev/api/v1/mcp/servers/custom",
                     headers=headers,
                     json=data,
                     timeout=30.0
                 )
                 
+                # If custom endpoint fails, try standard endpoint
+                if response.status_code == 404:
+                    logger.info("Custom endpoint not found, trying standard endpoint")
+                    # Remove custom-only fields
+                    standard_data = {
+                        "name": data["name"],
+                        "auth_config_ids": data["auth_config_ids"],
+                        "apps": data["apps"]
+                    }
+                    response = await client.post(
+                        "https://backend.composio.dev/api/v1/mcp/servers",
+                        headers=headers,
+                        json=standard_data,
+                        timeout=30.0
+                    )
+                
                 if response.status_code == 200 or response.status_code == 201:
                     result = response.json()
                     logger.info(f"MCP server creation response: {json.dumps(result, indent=2)[:500]}")
                     server_id = result.get("id") or result.get("server_id") or result.get("serverId")
+                    
+                    # After creating the server, we might need to create an instance
+                    # Check if we need to create an instance for the server to work
+                    if server_id and "instance_id" not in result:
+                        logger.info(f"Creating instance for MCP server {server_id}")
+                        instance_response = await client.post(
+                            f"https://backend.composio.dev/api/v1/mcp/servers/{server_id}/instances",
+                            headers=headers,
+                            json={
+                                "entity_id": user_id,
+                                "enable_all_tools": True
+                            },
+                            timeout=30.0
+                        )
+                        
+                        if instance_response.status_code in [200, 201]:
+                            instance_result = instance_response.json()
+                            logger.info(f"Created instance: {json.dumps(instance_result, indent=2)[:300]}")
+                            # Update result with instance info
+                            if "mcp_url" in instance_result:
+                                result["mcp_url"] = instance_result["mcp_url"]
+                        else:
+                            logger.warning(f"Failed to create instance: {instance_response.status_code}")
                     
                     # Check if Composio already returned the proper MCP URL
                     if "mcp_url" in result:
