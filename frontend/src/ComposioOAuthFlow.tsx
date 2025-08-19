@@ -43,15 +43,40 @@ export default function ComposioOAuthFlow({ onServerAdded }: ComposioOAuthFlowPr
       // Clean up URL
       window.history.replaceState({}, '', window.location.pathname)
     }
-  }, [])
+  }, [onServerAdded])
 
   const checkUserConnections = async (uid: string) => {
     setCheckingConnections(true)
     try {
       const response = await axios.get(`${API_BASE}/composio/connections/${uid}`)
-      if (response.data.connections) {
+      if (response.data.connections && response.data.connections.length > 0) {
         const connected = new Set(response.data.connections.map((c: any) => c.app.toLowerCase()))
         setConnectedApps(connected)
+        
+        // Ensure MCP servers are registered for all connected apps
+        let serversAdded = false
+        for (const connection of response.data.connections) {
+          const appName = connection.app.toLowerCase()
+          try {
+            const serverResponse = await axios.post(`${API_BASE}/composio/add-mcp-server`, {
+              user_id: uid,
+              app_name: appName
+            })
+            if (serverResponse.data.added) {
+              console.log(`Ensured MCP server for ${appName}`)
+              serversAdded = true
+            }
+          } catch (err) {
+            console.error(`Failed to ensure MCP server for ${appName}:`, err)
+          }
+        }
+        
+        // Refresh servers list if we added any
+        if (serversAdded) {
+          setTimeout(() => {
+            onServerAdded()
+          }, 500)
+        }
       }
     } catch (error) {
       console.log('No existing connections or Composio not configured')
