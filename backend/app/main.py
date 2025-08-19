@@ -875,12 +875,13 @@ async def websocket_chat(websocket: WebSocket):
                                 # For Composio, try a simple GET first to see what's available
                                 if is_composio:
                                     try:
-                                        get_response = await client.get(config.endpoint)
+                                        get_response = await client.get(config.endpoint, headers=headers)
                                         print(f"GET response status from {server}: {get_response.status_code}")
+                                        print(f"GET response headers: {dict(get_response.headers)}")
                                         if get_response.status_code == 200:
                                             print(f"GET response from {server}: {get_response.text[:500]}")
                                     except Exception as e:
-                                        print(f"GET request failed: {e}")
+                                        print(f"GET request failed: {str(e)}")
                                 
                                 # First, initialize the MCP session
                                 init_response = await client.post(
@@ -899,19 +900,44 @@ async def websocket_chat(websocket: WebSocket):
                                 
                                 if init_response.status_code == 200:
                                     print(f"MCP session initialized for {server}")
-                                    # Check if tools are returned in the initialize response
+                                    # Check content type
+                                    content_type = init_response.headers.get("content-type", "")
+                                    print(f"Init response content-type: {content_type}")
+                                    
+                                    # Parse response based on content type
                                     try:
-                                        init_result = init_response.json()
-                                        print(f"Initialize response: {json.dumps(init_result, indent=2)[:500]}")
-                                        if "result" in init_result and "tools" in init_result["result"]:
-                                            print(f"Tools found in initialize response!")
-                                            server_tools = init_result["result"]["tools"]
-                                            print(f"Found {len(server_tools)} tools from initialize")
-                                            # Skip the tools/list call if we already have tools
-                                            if server_tools:
-                                                continue
+                                        if "text/event-stream" in content_type:
+                                            # Parse SSE response
+                                            print("Parsing SSE init response...")
+                                            text = init_response.text
+                                            for line in text.split('\n'):
+                                                if line.startswith('data: '):
+                                                    data = line[6:]
+                                                    try:
+                                                        init_result = json.loads(data)
+                                                        print(f"Initialize SSE response: {json.dumps(init_result, indent=2)[:500]}")
+                                                        if "result" in init_result and "tools" in init_result["result"]:
+                                                            print(f"Tools found in initialize response!")
+                                                            server_tools = init_result["result"]["tools"]
+                                                            print(f"Found {len(server_tools)} tools from initialize")
+                                                            break
+                                                    except:
+                                                        continue
+                                        else:
+                                            # Regular JSON response
+                                            init_result = init_response.json()
+                                            print(f"Initialize JSON response: {json.dumps(init_result, indent=2)[:500]}")
+                                            if "result" in init_result and "tools" in init_result["result"]:
+                                                print(f"Tools found in initialize response!")
+                                                server_tools = init_result["result"]["tools"]
+                                                print(f"Found {len(server_tools)} tools from initialize")
                                     except Exception as e:
                                         print(f"Error parsing init response: {e}")
+                                        print(f"Raw response: {init_response.text[:500]}")
+                                    
+                                    # Skip tools/list if we already have tools
+                                    if server_tools:
+                                        continue
                                 
                                 try:
                                     # Try different method names for Composio
