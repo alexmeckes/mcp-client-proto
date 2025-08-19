@@ -615,10 +615,10 @@ class ComposioIntegration:
                 data["connection_ids"] = [connection_id]
                 logger.info(f"Including connection_id: {connection_id}")
             
-            # Add allowedTools if this is Gmail
+            # Add toolkits field as required by v3 API
             if app_name.lower() == "gmail":
-                data["allowedTools"] = gmail_tools
-                logger.info(f"Specifying {len(gmail_tools)} Gmail tools for MCP server")
+                data["toolkits"] = ["GMAIL"]  # Just specify the toolkit name
+                logger.info(f"Specifying GMAIL toolkit for MCP server")
             
             # Add entity_id to link the server to the user
             if user_id:
