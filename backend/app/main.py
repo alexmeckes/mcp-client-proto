@@ -1315,17 +1315,37 @@ async def websocket_chat(websocket: WebSocket):
                                 elif is_composio:
                                     # Check if it's SSE or regular JSON
                                     if tool_response.headers.get("content-type", "").startswith("text/event-stream"):
-                                        # Parse SSE
+                                        # Parse SSE - improved parser for large responses
+                                        print(f"🔧 Parsing SSE response, size: {len(tool_response.text)} chars")
                                         text = tool_response.text
                                         result = None
-                                        for line in text.split('\n'):
+                                        
+                                        # Try to parse the SSE response more robustly
+                                        lines = text.split('\n')
+                                        print(f"🔧 SSE has {len(lines)} lines")
+                                        
+                                        for i, line in enumerate(lines):
                                             if line.startswith('data: '):
-                                                data = line[6:]
+                                                data = line[6:]  # Remove 'data: ' prefix
+                                                print(f"🔧 Line {i}: data length = {len(data)}")
                                                 try:
                                                     result = json.loads(data)
+                                                    print(f"🔧 Successfully parsed JSON from line {i}")
+                                                    if "result" in result and "tools" in result["result"]:
+                                                        tools_count = len(result["result"]["tools"])
+                                                        print(f"🔧 Found {tools_count} tools in response")
                                                     break
-                                                except:
+                                                except json.JSONDecodeError as e:
+                                                    print(f"🔧 JSON parse error on line {i}: {str(e)[:100]}")
                                                     continue
+                                                except Exception as e:
+                                                    print(f"🔧 Other parse error on line {i}: {str(e)[:100]}")
+                                                    continue
+                                        
+                                        if not result:
+                                            print(f"🔧 Failed to parse any valid JSON from SSE response")
+                                            print(f"🔧 First 500 chars: {text[:500]}")
+                                            print(f"🔧 Last 500 chars: {text[-500:]}")
                                     else:
                                         # Regular JSON response
                                         try:
@@ -1347,9 +1367,15 @@ async def websocket_chat(websocket: WebSocket):
                                             print(f"🔧 Different error code ({error_code}), not using hardcoded tools")
                                     elif result and "result" in result:
                                         print(f"🔧 tools/list returned success result: {json.dumps(result.get('result', {}), indent=2)[:500]}")
+                                        # Extract the tools from the JSON-RPC result
+                                        if "tools" in result["result"]:
+                                            server_tools = result["result"]["tools"]
+                                            print(f"🔧 Successfully extracted {len(server_tools)} tools from tools/list response")
+                                        else:
+                                            print(f"🔧 No 'tools' field in result, keys: {list(result['result'].keys())}")
+                                            server_tools = []
                                     else:
                                         print(f"🔧 Unexpected tools/list response format: {result}")
-                                        # TODO: Add hardcoded tools fallback here
                                         server_tools = []
                             # Local server via mcpd
                             async with httpx.AsyncClient() as client:
