@@ -639,6 +639,34 @@ class ComposioIntegration:
                 # Check response status
                 logger.info(f"MCP server creation response status: {response.status_code}")
                 
+                if response.status_code == 403:
+                    # Server already exists, try to get the existing one
+                    error_response = response.json()
+                    if "already exists" in error_response.get("error", {}).get("message", ""):
+                        logger.info("MCP server already exists, attempting to retrieve existing server")
+                        try:
+                            # Try to list existing servers and find the one with this name
+                            list_response = await client.get(
+                                "https://backend.composio.dev/api/v3/mcp/servers",
+                                headers=headers,
+                                timeout=30.0
+                            )
+                            if list_response.status_code == 200:
+                                servers = list_response.json()
+                                servers_list = servers if isinstance(servers, list) else servers.get("items", servers.get("data", []))
+                                for server in servers_list:
+                                    if server.get("name") == safe_name:
+                                        server_id = server.get("id") or server.get("serverId")
+                                        if server_id:
+                                            logger.info(f"Found existing MCP server: {server_id}")
+                                            mcp_url = f"https://mcp.composio.dev/composio/server/{server_id}/mcp?user_id={user_id}"
+                                            return {
+                                                "server_id": server_id,
+                                                "url": mcp_url
+                                            }
+                        except Exception as e:
+                            logger.error(f"Failed to retrieve existing server: {e}")
+                
                 if response.status_code == 200 or response.status_code == 201:
                     result = response.json()
                     logger.info(f"MCP server creation response: {json.dumps(result, indent=2)[:500]}")
