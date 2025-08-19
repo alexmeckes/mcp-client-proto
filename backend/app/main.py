@@ -1014,6 +1014,11 @@ async def websocket_chat(websocket: WebSocket):
                                 if "mcp-session-id" in init_response.headers:
                                     mcp_session_id = init_response.headers["mcp-session-id"]
                                     print(f"Got MCP session ID: {mcp_session_id}")
+                                    
+                                    # Store session ID in server config for later tool execution
+                                    if server in remote_mcp_servers:
+                                        remote_mcp_servers[server].headers["Mcp-Session-Id"] = mcp_session_id
+                                        print(f"Stored MCP session ID for {server}: {mcp_session_id}")
                                 
                                 if init_response.status_code == 200:
                                     print(f"MCP session initialized for {server}")
@@ -1709,6 +1714,11 @@ async def websocket_chat(websocket: WebSocket):
                                     
                                     if is_composio:
                                         headers["Accept"] = "application/json, text/event-stream"
+                                        # Debug: Check if we have session ID
+                                        if "Mcp-Session-Id" in headers:
+                                            print(f"🔧 Tool execution with session ID: {headers['Mcp-Session-Id']}")
+                                        else:
+                                            print(f"⚠️  Tool execution WITHOUT session ID for {server_name}")
                                     elif config.auth_token:
                                         headers["Authorization"] = f"Bearer {config.auth_token}"
                                     
