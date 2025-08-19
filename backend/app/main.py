@@ -753,7 +753,11 @@ async def get_server_tools(server_name: str):
                         "method": "initialize",
                         "params": {
                             "protocolVersion": "0.1.0",
-                            "capabilities": {}
+                            "capabilities": {},
+                            "clientInfo": {
+                                "name": "mcp-client-proto",
+                                "version": "1.0.0"
+                            }
                         },
                         "id": 1
                     }
@@ -883,6 +887,9 @@ async def websocket_chat(websocket: WebSocket):
                                     except Exception as e:
                                         print(f"GET request failed: {str(e)}")
                                 
+                                # Initialize server_tools
+                                server_tools = []
+                                
                                 # First, initialize the MCP session
                                 init_response = await client.post(
                                     config.endpoint,
@@ -892,7 +899,11 @@ async def websocket_chat(websocket: WebSocket):
                                         "method": "initialize", 
                                         "params": {
                                             "protocolVersion": "0.1.0",
-                                            "capabilities": {}
+                                            "capabilities": {},
+                                            "clientInfo": {
+                                                "name": "mcp-client-proto",
+                                                "version": "1.0.0"
+                                            }
                                         }, 
                                         "id": 1
                                     }
