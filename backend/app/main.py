@@ -1158,22 +1158,24 @@ async def websocket_chat(websocket: WebSocket):
                                             if test_tool_response.status_code == 200:
                                                 print(f"Tool execution might work! Response: {test_tool_response.text[:200]}")
                                             
-                                            print(f"Now fetching from API as fallback...")
+                                            import time
+                                            request_id = f"REQ_{int(time.time()*1000) % 100000}"
+                                            print(f"[{request_id}] Now fetching from API as fallback...")
                                             # Extract user_id from the URL
                                             import re
                                             user_match = re.search(r'user_id=([^&]+)', config.endpoint)
-                                            print(f"Trying to extract user_id from: {config.endpoint}")
+                                            print(f"[{request_id}] Trying to extract user_id from: {config.endpoint}")
                                             if user_match:
                                                 user_id = user_match.group(1)
-                                                print(f"Extracted user_id: {user_id}")
+                                                print(f"[{request_id}] Extracted user_id: {user_id}")
                                                 # Extract app name from server name (composio-gmail -> gmail)
                                                 app_name = server.replace("composio-", "")
-                                                print(f"App name: {app_name}")
+                                                print(f"[{request_id}] App name: {app_name}")
                                                 
                                                 # Fetch tools from Composio API
                                                 try:
                                                     tools_from_api = await composio.get_available_tools(user_id, app_name)
-                                                    print(f"API returned {len(tools_from_api)} tools")
+                                                    print(f"[{request_id}] API returned {len(tools_from_api)} tools")
                                                     
                                                     if tools_from_api:
                                                         # Log first tool for debugging
@@ -1210,7 +1212,9 @@ async def websocket_chat(websocket: WebSocket):
                                                             continue
                                                     
                                                     print(f"Successfully converted {len(server_tools)} tools from Composio API")
-                                                    # Continue processing these tools
+                                                    # Add a flag to skip the normal processing since we already have the tools
+                                                    # formatted correctly from the API
+                                                    skip_normal_processing = True
                                                 except Exception as e:
                                                     print(f"Error fetching tools from Composio API: {e}")
                                                     import traceback
@@ -1252,12 +1256,54 @@ async def websocket_chat(websocket: WebSocket):
                         print(f"Processing {len(server_tools)} tools for {server}")
                         tools_added_count = 0
                         
+                        # Check if this is from the API fallback (tools already have inputSchema)
+                        skip_processing = False
+                        if server_tools and "inputSchema" in server_tools[0]:
+                            print(f"Tools from API fallback already formatted, adding directly")
+                            skip_processing = True
+                        
                         for i, tool in enumerate(server_tools):
                             if i < 2:  # Log first 2 tools for debugging
                                 try:
                                     print(f"Tool {i}: {json.dumps(tool, indent=2)[:300]}")
                                 except:
                                     print(f"Tool {i}: Could not serialize, keys: {tool.keys() if isinstance(tool, dict) else 'not a dict'}")
+                            
+                            # If tools are from API fallback, they're already formatted
+                            if skip_processing:
+                                # Tools from API already have the right structure
+                                tool_name = tool.get('name', 'unknown_tool')
+                                # Clean the name to match Anthropic's requirements
+                                clean_name = ''.join(c if c.isalnum() or c in '_-' else '_' for c in tool_name)
+                                clean_server = server.replace('-', '_')
+                                full_name = f"{clean_server}__{clean_name}"
+                                if len(full_name) > 128:
+                                    full_name = full_name[:128]
+                                
+                                # Get the schema - it's already in inputSchema
+                                params = tool.get("inputSchema", {})
+                                if not isinstance(params, dict):
+                                    params = {"type": "object", "properties": {}}
+                                elif "type" not in params:
+                                    params["type"] = "object"
+                                if params.get("type") == "object" and "properties" not in params:
+                                    params["properties"] = {}
+                                
+                                tool_def = {
+                                    "type": "function",
+                                    "function": {
+                                        "name": full_name,
+                                        "description": f"[{server}] {tool.get('description', '')}",
+                                        "parameters": params
+                                    }
+                                }
+                                tools.append(tool_def)
+                                tools_added_count += 1
+                                
+                                if i < 5:
+                                    print(f"Added API tool: {full_name}")
+                                continue
+                            
                             # Convert to OpenAI tools format
                             # Get the input schema from various possible locations
                             params = tool.get("inputSchema", tool.get("input_schema", tool.get("parameters", {})))
