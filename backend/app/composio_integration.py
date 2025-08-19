@@ -123,16 +123,21 @@ class ComposioIntegration:
             # Build query parameters
             params = {}
             if app_name:
-                # Use the apps parameter to filter by app
-                params["apps"] = app_name.upper()  # GMAIL, SLACK, etc.
+                # Use search parameter to filter by app name
+                # The API doesn't have an 'apps' parameter, use search instead
+                params["search"] = app_name.lower()  # gmail, slack, etc.
             
-            # Add entity_id to get tools for this specific user
-            params["entity_id"] = user_id
+            # Note: entity_id might not be a valid parameter either
+            # params["entity_id"] = user_id
+            
+            logger.info(f"Requesting tools with params: {params}")
             
             async with httpx.AsyncClient() as client:
                 # Try v3 API first, then fallback to v1
+                url = "https://backend.composio.dev/api/v3/tools"
+                logger.info(f"Calling: {url} with params: {params}")
                 response = await client.get(
-                    "https://backend.composio.dev/api/v3/tools",
+                    url,
                     headers=headers,
                     params=params,
                     timeout=30.0
@@ -160,15 +165,21 @@ class ComposioIntegration:
                         logger.info(f"Raw API response (first 500 chars): {str(data)[:500]}")
                     
                     result = []
-                    for tool in tools:
+                    # Log first few tools to see what we're getting
+                    for i, tool in enumerate(tools):
+                        if i < 3:
+                            logger.info(f"Tool {i}: name={tool.get('name')}, app={tool.get('app')}, appName={tool.get('appName')}")
+                        
                         result.append({
                             "name": tool.get("name", ""),
                             "description": tool.get("description", ""),
-                            "app": tool.get("app", app_name or ""),
+                            "app": tool.get("app", tool.get("appName", app_name or "")),
                             "parameters": tool.get("parameters", tool.get("input_schema", {}))
                         })
                     
-                    logger.info(f"Found {len(result)} tools for {app_name or 'all apps'}")
+                    # Log app distribution
+                    apps_found = set(t["app"] for t in result)
+                    logger.info(f"Found {len(result)} tools for {app_name or 'all apps'}, apps present: {apps_found}")
                     return result
                 else:
                     logger.error(f"Failed to get tools: {response.status_code} - {response.text[:200]}")
