@@ -744,11 +744,26 @@ async def get_server_tools(server_name: str):
                 elif config.auth_token:
                     headers["Authorization"] = f"Bearer {config.auth_token}"
                 
+                # Initialize MCP session first
+                init_response = await client.post(
+                    config.endpoint,
+                    headers=headers,
+                    json={
+                        "jsonrpc": "2.0",
+                        "method": "initialize",
+                        "params": {
+                            "protocolVersion": "0.1.0",
+                            "capabilities": {}
+                        },
+                        "id": 1
+                    }
+                )
+                
                 # Call remote server's tool listing endpoint
                 response = await client.post(
                     config.endpoint,
                     headers=headers,
-                    json={"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 1}
+                    json={"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 2}
                 )
                 response.raise_for_status()
                 
@@ -857,11 +872,30 @@ async def websocket_chat(websocket: WebSocket):
                                 elif config.auth_token:
                                     headers["Authorization"] = f"Bearer {config.auth_token}"
                                 
+                                # First, initialize the MCP session
+                                init_response = await client.post(
+                                    config.endpoint,
+                                    headers=headers,
+                                    json={
+                                        "jsonrpc": "2.0", 
+                                        "method": "initialize", 
+                                        "params": {
+                                            "protocolVersion": "0.1.0",
+                                            "capabilities": {}
+                                        }, 
+                                        "id": 1
+                                    }
+                                )
+                                
+                                if init_response.status_code == 200:
+                                    print(f"MCP session initialized for {server}")
+                                
                                 try:
+                                    # Now fetch the tools
                                     tool_response = await client.post(
                                         config.endpoint,
                                         headers=headers,
-                                        json={"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 1}
+                                        json={"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 2}
                                     )
                                     print(f"Tool response status: {tool_response.status_code}")
                                     if tool_response.status_code >= 400:
@@ -877,24 +911,38 @@ async def websocket_chat(websocket: WebSocket):
                                 if tool_response.status_code >= 400:
                                     print(f"Tool fetch failed for {server}: {tool_response.text[:200]}")
                                     server_tools = []
-                                # Handle Composio's SSE response
-                                elif is_composio and tool_response.headers.get("content-type", "").startswith("text/event-stream"):
-                                    text = tool_response.text
-                                    result = None
-                                    for line in text.split('\n'):
-                                        if line.startswith('data: '):
-                                            data = line[6:]
-                                            try:
-                                                result = json.loads(data)
-                                                break
-                                            except:
-                                                continue
-                                    if result and "result" in result:
+                                # Handle Composio's response (might be SSE or regular JSON)
+                                elif is_composio:
+                                    # Check if it's SSE or regular JSON
+                                    if tool_response.headers.get("content-type", "").startswith("text/event-stream"):
+                                        # Parse SSE
+                                        text = tool_response.text
+                                        result = None
+                                        for line in text.split('\n'):
+                                            if line.startswith('data: '):
+                                                data = line[6:]
+                                                try:
+                                                    result = json.loads(data)
+                                                    break
+                                                except:
+                                                    continue
+                                    else:
+                                        # Regular JSON response
+                                        try:
+                                            result = tool_response.json()
+                                        except:
+                                            result = None
+                                    
+                                    # Check for JSON-RPC error
+                                    if result and "error" in result:
+                                        print(f"JSON-RPC error from {server}: {result['error']}")
+                                        server_tools = []
+                                    elif result and "result" in result:
                                         server_tools = result["result"].get("tools", [])
-                                        print(f"Found {len(server_tools)} tools from SSE response")
+                                        print(f"Found {len(server_tools)} tools from response")
                                     else:
                                         server_tools = []
-                                        print(f"No tools found in SSE response: {result}")
+                                        print(f"No tools found in response: {result}")
                                 else:
                                     result = tool_response.json()
                                     if "result" in result:
