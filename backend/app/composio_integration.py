@@ -425,6 +425,11 @@ class ComposioIntegration:
         Returns:
             Dict with server_id and url, or None if failed
         """
+        logger.info("=" * 80)
+        logger.info("🚀🚀🚀 FIXED VERSION OF create_mcp_server IS RUNNING! 🚀🚀🚀")
+        logger.info("This should use toolkits + connection_ids, NOT authConfigId + apps")
+        logger.info("=" * 80)
+        
         if not self.api_key:
             logger.error("Composio API key not configured")
             return None
@@ -564,7 +569,10 @@ class ComposioIntegration:
             
             # Create MCP server with the connected app
             # Name must be 4-30 chars, only letters, numbers, spaces, and hyphens (no underscores)
-            safe_name = f"{app_name}-mcp-{user_id[:8]}".replace("_", "-")
+            # Add timestamp to ensure unique name and avoid cached/broken servers
+            import time
+            timestamp = str(int(time.time()))[-6:]  # Last 6 digits of timestamp
+            safe_name = f"{app_name}-{timestamp}-{user_id[:6]}".replace("_", "-")
             
             # Create MCP server with full configuration
             # Based on Composio's API documentation, we need to specify tools explicitly
