@@ -355,6 +355,7 @@ class ComposioIntegration:
             
             async with httpx.AsyncClient() as client:
                 # First, try to get existing auth configs
+                print(f"🔧 Getting auth configs for {app_name}")
                 logger.info(f"Getting auth configs for {app_name}")
                 
                 # Try the auth-configs endpoint
@@ -535,8 +536,10 @@ class ComposioIntegration:
             
             # CRITICAL: We MUST have a proper auth_config_id for tools to work
             # Always try to get or create one first
-            logger.info(f"Ensuring we have proper auth_config_id for {app_name}")
+            print(f"🔧 NEW CODE RUNNING: Ensuring we have proper auth_config_id for {app_name}")
+            logger.info(f"🔧 NEW CODE: Ensuring we have proper auth_config_id for {app_name}")
             auth_config_id = await self.get_or_create_auth_config(app_name)
+            print(f"🔧 NEW CODE: get_or_create_auth_config returned: {auth_config_id}")
             
             if not auth_config_id or not auth_config_id.startswith("ac_"):
                 logger.error(f"Failed to get proper auth_config_id for {app_name}")

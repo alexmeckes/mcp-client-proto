@@ -230,6 +230,27 @@ async def disconnect_composio(request: AddMCPServerRequest):
             "error": str(e)
         }
 
+@app.get("/composio/test-auth-config/{app_name}")
+async def test_auth_config(app_name: str):
+    """Test if we can get/create auth config for an app"""
+    print(f"🧪 Testing auth config for {app_name}")
+    
+    try:
+        auth_config_id = await composio.get_or_create_auth_config(app_name)
+        print(f"🧪 Result: {auth_config_id}")
+        
+        return {
+            "success": bool(auth_config_id and auth_config_id.startswith("ac_")),
+            "auth_config_id": auth_config_id,
+            "valid": auth_config_id.startswith("ac_") if auth_config_id else False
+        }
+    except Exception as e:
+        print(f"🧪 Error: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 @app.post("/composio/fix-auth-config")
 async def fix_auth_config(request: AddMCPServerRequest):
     """Ensure we have a proper auth_config_id for an app"""
