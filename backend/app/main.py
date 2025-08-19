@@ -198,6 +198,38 @@ class AddMCPServerRequest(BaseModel):
     user_id: str
     app_name: str
 
+@app.post("/composio/disconnect")
+async def disconnect_composio(request: AddMCPServerRequest):
+    """Disconnect a Composio app for a user"""
+    print(f"Disconnecting {request.app_name} for user {request.user_id}")
+    
+    try:
+        # Remove from MCP server mappings
+        mapping_key = f"{request.user_id}:{request.app_name}"
+        if mapping_key in mcp_server_mappings:
+            del mcp_server_mappings[mapping_key]
+            print(f"Removed MCP server mapping for {mapping_key}")
+        
+        # Remove from remote servers
+        server_name = f"composio-{request.app_name}"
+        if server_name in remote_mcp_servers:
+            del remote_mcp_servers[server_name]
+            print(f"Removed remote server {server_name}")
+        
+        # Disconnect via Composio API
+        success = await composio.disconnect_app(request.user_id, request.app_name)
+        
+        return {
+            "success": success,
+            "message": f"Disconnected {request.app_name}" if success else "Disconnect failed"
+        }
+    except Exception as e:
+        print(f"Error disconnecting: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 @app.post("/composio/fix-auth-config")
 async def fix_auth_config(request: AddMCPServerRequest):
     """Ensure we have a proper auth_config_id for an app"""

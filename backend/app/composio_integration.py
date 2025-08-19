@@ -890,13 +890,13 @@ class ComposioIntegration:
         logger.error(f"Fallback URL requested for {app_name} - MCP server creation failed")
         return f"https://mcp.composio.dev/error/no-server-created"
     
-    async def disconnect_app(self, user_id: str, connection_id: str) -> bool:
+    async def disconnect_app(self, user_id: str, app_name: str) -> bool:
         """
         Disconnect an app for a user
         
         Args:
             user_id: User identifier
-            connection_id: Connection ID to disconnect
+            app_name: App name to disconnect
         
         Returns:
             Success status
@@ -905,10 +905,24 @@ class ComposioIntegration:
             return False
         
         try:
-            entity = self.client.get_entity(id=user_id)
-            # This would need the actual Composio SDK method for disconnection
-            # entity.disconnect(connection_id)
-            return True
+            # Get user's connections
+            connections = await self.get_user_connections(user_id)
+            connection_id = None
+            
+            for conn in connections:
+                if conn.get("app", "").lower() == app_name.lower():
+                    connection_id = conn.get("connection_id") or conn.get("id")
+                    break
+            
+            if connection_id:
+                entity = self.client.get_entity(id=user_id)
+                # Use the SDK to disconnect
+                entity.get_connection(connection_id).delete()
+                logger.info(f"Disconnected {app_name} (connection: {connection_id}) for user {user_id}")
+                return True
+            else:
+                logger.warning(f"No connection found for {app_name}")
+                return False
         except Exception as e:
             logger.error(f"Failed to disconnect app: {e}")
             return False
