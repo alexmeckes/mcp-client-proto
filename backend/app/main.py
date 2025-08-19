@@ -1154,12 +1154,17 @@ async def websocket_chat(websocket: WebSocket):
                                                 try:
                                                     tools_from_api = await composio.get_available_tools(user_id, app_name)
                                                     print(f"API returned {len(tools_from_api)} tools")
+                                                    
+                                                    if tools_from_api:
+                                                        # Log first tool for debugging
+                                                        print(f"First tool from API: {json.dumps(tools_from_api[0], indent=2)[:300]}")
+                                                    
                                                     server_tools = []
                                                     for api_tool in tools_from_api:
                                                         server_tools.append({
-                                                            "name": api_tool["name"],
-                                                            "description": api_tool["description"],
-                                                            "inputSchema": api_tool.get("parameters", {})
+                                                            "name": api_tool.get("name", "unknown"),
+                                                            "description": api_tool.get("description", ""),
+                                                            "inputSchema": api_tool.get("parameters", api_tool.get("input_schema", {}))
                                                         })
                                                     print(f"Got {len(server_tools)} tools from Composio API for {app_name}")
                                                 except Exception as e:
