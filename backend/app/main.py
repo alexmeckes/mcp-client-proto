@@ -1183,27 +1183,33 @@ async def websocket_chat(websocket: WebSocket):
                                                             print(f"Error logging first tool: {e}")
                                                             print(f"First tool keys: {tools_from_api[0].keys() if tools_from_api else 'None'}")
                                                     
+                                                    print(f"Starting to process {len(tools_from_api)} tools from API")
                                                     server_tools = []
                                                     for idx, api_tool in enumerate(tools_from_api):
                                                         try:
+                                                            tool_name = api_tool.get("name", "unknown")
+                                                            tool_desc = api_tool.get("description", "")
                                                             tool_schema = api_tool.get("parameters", api_tool.get("input_schema", {}))
+                                                            
                                                             # Ensure the schema is a dict
                                                             if not isinstance(tool_schema, dict):
                                                                 tool_schema = {}
                                                             
                                                             server_tools.append({
-                                                                "name": api_tool.get("name", "unknown"),
-                                                                "description": api_tool.get("description", ""),
+                                                                "name": tool_name,
+                                                                "description": tool_desc,
                                                                 "inputSchema": tool_schema
                                                             })
                                                             
-                                                            if idx < 2:
-                                                                print(f"Processed tool {idx}: {api_tool.get('name')}")
+                                                            if idx < 3:
+                                                                print(f"Processed tool {idx}: name='{tool_name}'")
                                                         except Exception as e:
                                                             print(f"Error processing tool {idx}: {e}")
+                                                            import traceback
+                                                            print(f"Traceback: {traceback.format_exc()}")
                                                             continue
                                                     
-                                                    print(f"Got {len(server_tools)} tools from Composio API for {app_name}")
+                                                    print(f"Successfully converted {len(server_tools)} tools from Composio API")
                                                     # Continue processing these tools
                                                 except Exception as e:
                                                     print(f"Error fetching tools from Composio API: {e}")
@@ -1243,9 +1249,15 @@ async def websocket_chat(websocket: WebSocket):
                             print(f"No tools to process for {server}")
                             continue
                         
+                        print(f"Processing {len(server_tools)} tools for {server}")
+                        tools_added_count = 0
+                        
                         for i, tool in enumerate(server_tools):
                             if i < 2:  # Log first 2 tools for debugging
-                                print(f"Tool {i}: {json.dumps(tool, indent=2)[:300]}")
+                                try:
+                                    print(f"Tool {i}: {json.dumps(tool, indent=2)[:300]}")
+                                except:
+                                    print(f"Tool {i}: Could not serialize, keys: {tool.keys() if isinstance(tool, dict) else 'not a dict'}")
                             # Convert to OpenAI tools format
                             # Get the input schema from various possible locations
                             params = tool.get("inputSchema", tool.get("input_schema", tool.get("parameters", {})))
@@ -1284,10 +1296,13 @@ async def websocket_chat(websocket: WebSocket):
                                 }
                             }
                             tools.append(tool_def)
+                            tools_added_count += 1
                             
                             # Log tool being added
                             if i < 5:  # Log first 5 tools
                                 print(f"Added tool: {full_name}")
+                        
+                        print(f"Added {tools_added_count} tools from {server} to final list")
                     except Exception as e:
                         print(f"Error getting tools for {server}: {e}")
                         continue
