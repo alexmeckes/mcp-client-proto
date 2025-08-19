@@ -134,9 +134,17 @@ async def health_check():
         "mcpd_url": MCPD_BASE_URL if mcpd_available else None
     }
 
-# Initialize Composio integration
-composio = ComposioIntegration()
-composio_direct = ComposioToolsDirect()
+# Initialize Composio integration with error handling
+try:
+    print("Initializing Composio integration...")
+    composio = ComposioIntegration()
+    composio_direct = ComposioToolsDirect()
+    print("✓ Composio integration initialized successfully")
+except Exception as e:
+    print(f"⚠️ Failed to initialize Composio integration: {e}")
+    print("Continuing without Composio integration...")
+    composio = None
+    composio_direct = None
 
 class ComposioConnectRequest(BaseModel):
     user_id: str
@@ -148,14 +156,10 @@ async def composio_connect(request: ComposioConnectRequest):
     """Initiate Composio connection for a specific app"""
     print(f"Composio connect request: user={request.user_id}, app={request.app_name}")
     
-    if not composio.is_configured():
-        print("Composio not configured, falling back to direct mode")
-        # If no API key, we can still use the direct MCP URLs with customer ID
-        mcp_url = composio.get_mcp_url_for_app(request.user_id, request.app_name)
+    if not composio or not composio.is_configured():
+        print("Composio not configured or not available")
         return {
-            "mode": "direct",
-            "mcp_url": mcp_url,
-            "message": "Add this URL to your MCP servers using your Composio Customer ID"
+            "error": "Composio integration not available. Please check COMPOSIO_API_KEY."
         }
     
     print(f"Initiating OAuth connection for {request.app_name}")
@@ -179,6 +183,8 @@ async def composio_connect(request: ComposioConnectRequest):
 @app.get("/composio/connections/{user_id}")
 async def get_composio_connections(user_id: str):
     """Get user's connected Composio apps"""
+    if not composio:
+        return {"connections": []}
     connections = await composio.get_user_connections(user_id)
     return {"connections": connections}
 
@@ -257,6 +263,9 @@ async def fix_auth_config(request: AddMCPServerRequest):
     print(f"Fixing auth config for {request.app_name}")
     
     # Get or create proper auth config
+    if not composio:
+        return {"error": "Composio integration not available", "added": False}
+    
     auth_config_id = await composio.get_or_create_auth_config(request.app_name)
     
     if auth_config_id and auth_config_id.startswith("ac_"):
