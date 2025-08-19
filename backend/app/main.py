@@ -18,6 +18,7 @@ import subprocess
 # Removed tool_handler import since we'll simplify without Anthropic SDK
 # from app.tool_handler import handle_tool_use_response
 from app.composio_integration import ComposioIntegration
+from app.composio_tools_direct import ComposioToolsDirect
 from fastapi.responses import RedirectResponse, JSONResponse
 import uuid
 
@@ -135,6 +136,7 @@ async def health_check():
 
 # Initialize Composio integration
 composio = ComposioIntegration()
+composio_direct = ComposioToolsDirect()
 
 class ComposioConnectRequest(BaseModel):
     user_id: str
@@ -185,6 +187,12 @@ async def get_composio_tools(user_id: str, app_name: Optional[str] = None):
     """Get available tools for user's connected apps"""
     tools = await composio.get_available_tools(user_id, app_name)
     return {"tools": tools}
+
+@app.get("/composio/gmail-tools-direct/{user_id}")
+async def get_gmail_tools_direct(user_id: str):
+    """Get Gmail tools directly without MCP"""
+    tools = await composio_direct.get_gmail_tools(user_id)
+    return {"tools": tools, "source": "direct"}
 
 class AddMCPServerRequest(BaseModel):
     user_id: str
@@ -1090,9 +1098,30 @@ async def websocket_chat(websocket: WebSocket):
                                         error_code = result["error"].get("code")
                                         print(f"Error code: {error_code}, Type: {type(error_code)}")
                                         
-                                        # For Composio, if tools/list fails, try fetching from their API
+                                        # For Composio, if tools/list fails, try different approaches
                                         if error_code == -32601:  # Method not found
-                                            print(f"Composio MCP doesn't support tools/list, fetching from API...")
+                                            print(f"Composio MCP doesn't support tools/list")
+                                            
+                                            # Check if Composio exposes specific Gmail tools directly
+                                            # Try calling a known Gmail tool to see if it works
+                                            print(f"Testing if tools are executable without listing...")
+                                            test_tool_response = await client.post(
+                                                config.endpoint,
+                                                headers=tools_headers,
+                                                json={
+                                                    "jsonrpc": "2.0", 
+                                                    "method": "tools/call",
+                                                    "params": {
+                                                        "name": "GMAIL_GET_PROFILE",
+                                                        "arguments": {}
+                                                    },
+                                                    "id": 99
+                                                }
+                                            )
+                                            if test_tool_response.status_code == 200:
+                                                print(f"Tool execution might work! Response: {test_tool_response.text[:200]}")
+                                            
+                                            print(f"Now fetching from API as fallback...")
                                             # Extract user_id from the URL
                                             import re
                                             user_match = re.search(r'user_id=([^&]+)', config.endpoint)
