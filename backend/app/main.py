@@ -1087,7 +1087,32 @@ async def websocket_chat(websocket: WebSocket):
                                     # Check for JSON-RPC error
                                     if result and "error" in result:
                                         print(f"JSON-RPC error from {server}: {result['error']}")
-                                        server_tools = []
+                                        
+                                        # For Composio, if tools/list fails, try fetching from their API
+                                        if result["error"].get("code") == -32601:  # Method not found
+                                            print(f"Composio MCP doesn't support tools/list, fetching from API...")
+                                            # Extract user_id from the URL
+                                            import re
+                                            user_match = re.search(r'user_id=([^&]+)', config.endpoint)
+                                            if user_match:
+                                                user_id = user_match.group(1)
+                                                # Extract app name from server name (composio-gmail -> gmail)
+                                                app_name = server.replace("composio-", "")
+                                                
+                                                # Fetch tools from Composio API
+                                                tools_from_api = await composio.get_available_tools(user_id, app_name)
+                                                server_tools = []
+                                                for api_tool in tools_from_api:
+                                                    server_tools.append({
+                                                        "name": api_tool["name"],
+                                                        "description": api_tool["description"],
+                                                        "inputSchema": api_tool.get("parameters", {})
+                                                    })
+                                                print(f"Got {len(server_tools)} tools from Composio API for {app_name}")
+                                            else:
+                                                server_tools = []
+                                        else:
+                                            server_tools = []
                                     elif result and "result" in result:
                                         server_tools = result["result"].get("tools", [])
                                         print(f"Found {len(server_tools)} tools from response")
