@@ -358,13 +358,36 @@ class ComposioIntegration:
                 print(f"🔧 Getting auth configs for {app_name}")
                 logger.info(f"Getting auth configs for {app_name}")
                 
-                # Try the auth-configs endpoint
-                response = await client.get(
+                # Try different possible auth config endpoints
+                endpoints_to_try = [
                     "https://backend.composio.dev/api/v1/auth-configs",
-                    headers=headers,
-                    params={"app": app_name.upper()},
-                    timeout=30.0
-                )
+                    "https://backend.composio.dev/api/v2/auth-configs", 
+                    "https://backend.composio.dev/api/v1/integrations/{}/auth-configs".format(app_name.upper()),
+                    "https://backend.composio.dev/api/v1/apps/{}/auth-configs".format(app_name.upper())
+                ]
+                
+                response = None
+                for endpoint in endpoints_to_try:
+                    try:
+                        print(f"🔧 Trying auth config endpoint: {endpoint}")
+                        response = await client.get(
+                            endpoint,
+                            headers=headers,
+                            params={"app": app_name.upper()} if "auth-configs" in endpoint and "{" not in endpoint else {},
+                            timeout=30.0
+                        )
+                        if response.status_code != 404:
+                            print(f"🔧 Endpoint {endpoint} returned {response.status_code}")
+                            break
+                        else:
+                            print(f"🔧 Endpoint {endpoint} not found (404)")
+                    except Exception as e:
+                        print(f"🔧 Endpoint {endpoint} failed: {e}")
+                        continue
+                
+                if not response:
+                    print(f"🔧 All auth config endpoints failed, skipping auth config creation")
+                    return None
                 
                 if response.status_code == 200:
                     data = response.json()

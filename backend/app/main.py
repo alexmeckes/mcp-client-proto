@@ -1010,15 +1010,23 @@ async def websocket_chat(websocket: WebSocket):
                                     }
                                 )
                                 
-                                # Check for MCP session header
-                                if "mcp-session-id" in init_response.headers:
-                                    mcp_session_id = init_response.headers["mcp-session-id"]
-                                    print(f"Got MCP session ID: {mcp_session_id}")
-                                    
-                                    # Store session ID in server config for later tool execution
-                                    if server in remote_mcp_servers:
-                                        remote_mcp_servers[server].headers["Mcp-Session-Id"] = mcp_session_id
-                                        print(f"Stored MCP session ID for {server}: {mcp_session_id}")
+                                # Check for MCP session header (debug all headers)
+                                print(f"🔧 Init response headers: {dict(init_response.headers)}")
+                                session_id_found = False
+                                for header_name in ["mcp-session-id", "Mcp-Session-Id", "x-mcp-session-id", "X-MCP-Session-Id"]:
+                                    if header_name in init_response.headers:
+                                        mcp_session_id = init_response.headers[header_name]
+                                        print(f"Got MCP session ID ({header_name}): {mcp_session_id}")
+                                        session_id_found = True
+                                        
+                                        # Store session ID in server config for later tool execution
+                                        if server in remote_mcp_servers:
+                                            remote_mcp_servers[server].headers["Mcp-Session-Id"] = mcp_session_id
+                                            print(f"Stored MCP session ID for {server}: {mcp_session_id}")
+                                        break
+                                
+                                if not session_id_found:
+                                    print(f"🔧 No session ID found in headers for {server} - authentication may be URL-based")
                                 
                                 if init_response.status_code == 200:
                                     print(f"MCP session initialized for {server}")
@@ -1245,13 +1253,15 @@ async def websocket_chat(websocket: WebSocket):
                                                     )
                                     except:
                                         pass
-                                    print(f"Tool response status: {tool_response.status_code}")
-                                    print(f"Tool response headers: {dict(tool_response.headers)}")
-                                    print(f"Tool response content-type: {tool_response.headers.get('content-type', 'unknown')}")
+                                    print(f"🔧 tools/list response status: {tool_response.status_code}")
+                                    print(f"🔧 tools/list response headers: {dict(tool_response.headers)}")
+                                    print(f"🔧 tools/list content-type: {tool_response.headers.get('content-type', 'unknown')}")
+                                    print(f"🔧 tools/list response body: {tool_response.text[:1000]}")
+                                    
                                     if tool_response.status_code >= 400:
-                                        print(f"Error response body: {tool_response.text[:500]}")
+                                        print(f"🔧 HTTP error response for tools/list")
                                     else:
-                                        print(f"Tool response body (first 500 chars): {tool_response.text[:500]}")
+                                        print(f"🔧 tools/list completed, checking for JSON-RPC errors")
                                 except httpx.HTTPError as e:
                                     print(f"HTTP error fetching tools from {server}: {e}")
                                     print(f"Request URL: {config.endpoint}")
@@ -1287,14 +1297,20 @@ async def websocket_chat(websocket: WebSocket):
                                     
                                     # Check for JSON-RPC error
                                     if result and "error" in result:
-                                        print(f"JSON-RPC error from {server}: {result['error']}")
+                                        print(f"🔧 JSON-RPC error from {server}: {result['error']}")
                                         error_code = result["error"].get("code")
-                                        print(f"Error code: {error_code}, Type: {type(error_code)}")
+                                        print(f"🔧 Error code: {error_code}, Type: {type(error_code)}")
                                         
                                         # For Composio, if tools/list fails, use hardcoded tools
                                         if error_code == -32601:  # Method not found
-                                            print(f"Composio MCP doesn't support standard tools/list")
-                                            print(f"Using hardcoded tool definitions for Composio")
+                                            print(f"🔧 Composio MCP doesn't support standard tools/list")
+                                            print(f"🔧 Using hardcoded tool definitions for Composio")
+                                        else:
+                                            print(f"🔧 Different error code ({error_code}), not using hardcoded tools")
+                                    elif result and "result" in result:
+                                        print(f"🔧 tools/list returned success result: {json.dumps(result.get('result', {}), indent=2)[:500]}")
+                                    else:
+                                        print(f"🔧 Unexpected tools/list response format: {result}")
                                             
                                             # Extract app name from server name
                                             app_name = server.replace("composio-", "").upper()
