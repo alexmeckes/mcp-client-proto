@@ -1,5 +1,6 @@
 """Proper Composio integration using their SDK"""
 import os
+import json
 from typing import Optional, List, Dict, Any
 from composio import Composio, ComposioToolSet
 from composio.client.exceptions import ComposioClientError
@@ -247,12 +248,17 @@ class ComposioIntegration:
                 "Content-Type": "application/json"
             }
             
+            # First check if the user has this app connected
+            logger.info(f"Creating MCP server for {app_name} with entity {user_id}")
+            
             # Create MCP server with the connected app
             data = {
                 "apps": [app_name.upper()],  # Apps should be uppercase (GMAIL, SLACK, etc)
                 "entity_id": user_id,
                 "name": f"{app_name}_mcp_{user_id[:8]}"  # Unique name for the server
             }
+            
+            logger.info(f"MCP server creation request: {json.dumps(data)}")
             
             async with httpx.AsyncClient() as client:
                 response = await client.post(
@@ -264,6 +270,7 @@ class ComposioIntegration:
                 
                 if response.status_code == 200 or response.status_code == 201:
                     result = response.json()
+                    logger.info(f"MCP server creation response: {json.dumps(result, indent=2)[:500]}")
                     server_id = result.get("id") or result.get("server_id") or result.get("serverId")
                     
                     # Check if Composio already returned the proper MCP URL
