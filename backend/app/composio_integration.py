@@ -210,10 +210,19 @@ class ComposioIntegration:
                     result = response.json()
                     server_id = result.get("id") or result.get("server_id") or result.get("serverId")
                     
-                    if server_id:
-                        # Construct the MCP URL with the server UUID
-                        mcp_url = f"https://mcp.composio.dev/composio/server/{server_id}"
-                        logger.info(f"Created MCP server {server_id} for {app_name}")
+                    # Check if Composio already returned the proper MCP URL
+                    if "mcp_url" in result:
+                        logger.info(f"Using Composio-provided MCP URL for {app_name}")
+                        return {
+                            "server_id": server_id,
+                            "url": result["mcp_url"]  # Use the URL Composio provides
+                        }
+                    elif server_id:
+                        # Construct the proper MCP URL with /mcp path and user_id parameter
+                        # According to Composio docs, the format should be:
+                        # https://mcp.composio.dev/composio/server/<UUID>/mcp?user_id=<user>
+                        mcp_url = f"https://mcp.composio.dev/composio/server/{server_id}/mcp?user_id={user_id}"
+                        logger.info(f"Created MCP server {server_id} for {app_name} with user {user_id}")
                         return {
                             "server_id": server_id,
                             "url": mcp_url
@@ -237,15 +246,27 @@ class ComposioIntegration:
                         )
                         if response2.status_code in [200, 201]:
                             result2 = response2.json()
-                            if "url" in result2:
+                            # Check if we got the mcp_url directly
+                            if "mcp_url" in result2:
                                 # Extract server ID from URL if present
+                                import re
+                                match = re.search(r'/server/([a-f0-9-]+)', result2["mcp_url"])
+                                server_id = match.group(1) if match else result2.get("server_id", "unknown")
+                                return {
+                                    "server_id": server_id,
+                                    "url": result2["mcp_url"]  # Use the provided MCP URL
+                                }
+                            elif "url" in result2:
+                                # If we only got a base URL, construct the proper MCP URL
                                 import re
                                 match = re.search(r'/server/([a-f0-9-]+)', result2["url"])
                                 if match:
                                     server_id = match.group(1)
+                                    # Add /mcp path and user_id parameter
+                                    mcp_url = f"{result2['url']}/mcp?user_id={user_id}"
                                     return {
                                         "server_id": server_id,
-                                        "url": result2["url"]
+                                        "url": mcp_url
                                     }
                     return None
                     

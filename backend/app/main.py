@@ -201,7 +201,8 @@ async def add_composio_mcp_server(request: AddMCPServerRequest):
     # Check if we already have a server for this user/app combination
     if mapping_key in mcp_server_mappings:
         server_uuid = mcp_server_mappings[mapping_key]
-        mcp_url = f"https://mcp.composio.dev/composio/server/{server_uuid}"
+        # Use the proper MCP URL format with /mcp path and user_id parameter
+        mcp_url = f"https://mcp.composio.dev/composio/server/{server_uuid}/mcp?user_id={request.user_id}"
         print(f"Using existing MCP server {server_uuid} for {request.app_name}")
     else:
         # Create a new MCP server instance via Composio API
@@ -678,9 +679,8 @@ async def list_servers():
     """List available MCP servers from both mcpd and remote sources"""
     servers = []
     
-    # Try to get servers from MCPD regardless of mcpd_available flag (for debugging)
-    # Get local servers from mcpd (only if available)
-    if True:  # Changed from mcpd_available for testing
+    # Get local servers from mcpd (only if available and configured)
+    if MCPD_ENABLED and MCPD_BASE_URL:
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 print(f"Trying to fetch servers from: {MCPD_BASE_URL}/servers")
@@ -887,14 +887,19 @@ async def websocket_chat(websocket: WebSocket):
                                     except Exception as e:
                                         print(f"GET request failed: {str(e)}")
                                 
-                                # Initialize server_tools
+                                # Initialize server_tools and session tracking
                                 server_tools = []
+                                mcp_session_id = None
+                                negotiated_protocol = "2025-03-26"
                                 
                                 # First, initialize the MCP session
                                 # Use the newer protocol version that Composio supports
+                                init_headers = headers.copy()
+                                init_headers["Accept"] = "application/json, text/event-stream"
+                                
                                 init_response = await client.post(
                                     config.endpoint,
-                                    headers=headers,
+                                    headers=init_headers,
                                     json={
                                         "jsonrpc": "2.0", 
                                         "method": "initialize", 
@@ -912,6 +917,11 @@ async def websocket_chat(websocket: WebSocket):
                                         "id": 1
                                     }
                                 )
+                                
+                                # Check for MCP session header
+                                if "mcp-session-id" in init_response.headers:
+                                    mcp_session_id = init_response.headers["mcp-session-id"]
+                                    print(f"Got MCP session ID: {mcp_session_id}")
                                 
                                 if init_response.status_code == 200:
                                     print(f"MCP session initialized for {server}")
@@ -934,6 +944,11 @@ async def websocket_chat(websocket: WebSocket):
                                                         
                                                         # Check for tools in result.tools
                                                         if "result" in init_result:
+                                                            # Store the negotiated protocol version
+                                                            if "protocolVersion" in init_result["result"]:
+                                                                negotiated_protocol = init_result["result"]["protocolVersion"]
+                                                                print(f"Negotiated protocol version: {negotiated_protocol}")
+                                                            
                                                             if "tools" in init_result["result"] and isinstance(init_result["result"]["tools"], list):
                                                                 print(f"Tools found as array in initialize response!")
                                                                 server_tools = init_result["result"]["tools"]
@@ -952,6 +967,11 @@ async def websocket_chat(websocket: WebSocket):
                                             
                                             # Check for tools in result.tools
                                             if "result" in init_result:
+                                                # Store the negotiated protocol version
+                                                if "protocolVersion" in init_result["result"]:
+                                                    negotiated_protocol = init_result["result"]["protocolVersion"]
+                                                    print(f"Negotiated protocol version: {negotiated_protocol}")
+                                                
                                                 if "tools" in init_result["result"] and isinstance(init_result["result"]["tools"], list):
                                                     print(f"Tools found as array in initialize response!")
                                                     server_tools = init_result["result"]["tools"]
@@ -977,11 +997,23 @@ async def websocket_chat(websocket: WebSocket):
                                         continue
                                 
                                 try:
+                                    # Prepare headers for tools/list request
+                                    tools_headers = headers.copy()
+                                    tools_headers["Accept"] = "application/json, text/event-stream"
+                                    
+                                    # Add MCP session headers if we have them
+                                    if mcp_session_id:
+                                        tools_headers["Mcp-Session-Id"] = mcp_session_id
+                                        print(f"Including MCP session ID in tools request: {mcp_session_id}")
+                                    
+                                    # Add protocol version header
+                                    tools_headers["Mcp-Protocol-Version"] = negotiated_protocol
+                                    
                                     # Try different method names for Composio
                                     # First try the standard MCP method
                                     tool_response = await client.post(
                                         config.endpoint,
-                                        headers=headers,
+                                        headers=tools_headers,
                                         json={"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 2}
                                     )
                                     
@@ -993,7 +1025,7 @@ async def websocket_chat(websocket: WebSocket):
                                             # Try alternative method names
                                             tool_response = await client.post(
                                                 config.endpoint,
-                                                headers=headers,
+                                                headers=tools_headers,  # Use tools_headers with session info
                                                 json={"jsonrpc": "2.0", "method": "mcp/list_tools", "params": {}, "id": 3}
                                             )
                                             
@@ -1002,7 +1034,7 @@ async def websocket_chat(websocket: WebSocket):
                                                 print(f"mcp/list_tools not supported, trying listTools...")
                                                 tool_response = await client.post(
                                                     config.endpoint,
-                                                    headers=headers,
+                                                    headers=tools_headers,  # Use tools_headers with session info
                                                     json={"jsonrpc": "2.0", "method": "listTools", "params": {}, "id": 4}
                                                 )
                                                 
@@ -1011,7 +1043,7 @@ async def websocket_chat(websocket: WebSocket):
                                                     print(f"listTools not supported, trying list...")
                                                     tool_response = await client.post(
                                                         config.endpoint,
-                                                        headers=headers,
+                                                        headers=tools_headers,  # Use tools_headers with session info
                                                         json={"jsonrpc": "2.0", "method": "list", "params": {}, "id": 5}
                                                     )
                                     except:
