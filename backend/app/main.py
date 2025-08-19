@@ -1087,31 +1087,43 @@ async def websocket_chat(websocket: WebSocket):
                                     # Check for JSON-RPC error
                                     if result and "error" in result:
                                         print(f"JSON-RPC error from {server}: {result['error']}")
+                                        error_code = result["error"].get("code")
+                                        print(f"Error code: {error_code}, Type: {type(error_code)}")
                                         
                                         # For Composio, if tools/list fails, try fetching from their API
-                                        if result["error"].get("code") == -32601:  # Method not found
+                                        if error_code == -32601:  # Method not found
                                             print(f"Composio MCP doesn't support tools/list, fetching from API...")
                                             # Extract user_id from the URL
                                             import re
                                             user_match = re.search(r'user_id=([^&]+)', config.endpoint)
+                                            print(f"Trying to extract user_id from: {config.endpoint}")
                                             if user_match:
                                                 user_id = user_match.group(1)
+                                                print(f"Extracted user_id: {user_id}")
                                                 # Extract app name from server name (composio-gmail -> gmail)
                                                 app_name = server.replace("composio-", "")
+                                                print(f"App name: {app_name}")
                                                 
                                                 # Fetch tools from Composio API
-                                                tools_from_api = await composio.get_available_tools(user_id, app_name)
-                                                server_tools = []
-                                                for api_tool in tools_from_api:
-                                                    server_tools.append({
-                                                        "name": api_tool["name"],
-                                                        "description": api_tool["description"],
-                                                        "inputSchema": api_tool.get("parameters", {})
-                                                    })
-                                                print(f"Got {len(server_tools)} tools from Composio API for {app_name}")
+                                                try:
+                                                    tools_from_api = await composio.get_available_tools(user_id, app_name)
+                                                    print(f"API returned {len(tools_from_api)} tools")
+                                                    server_tools = []
+                                                    for api_tool in tools_from_api:
+                                                        server_tools.append({
+                                                            "name": api_tool["name"],
+                                                            "description": api_tool["description"],
+                                                            "inputSchema": api_tool.get("parameters", {})
+                                                        })
+                                                    print(f"Got {len(server_tools)} tools from Composio API for {app_name}")
+                                                except Exception as e:
+                                                    print(f"Error fetching tools from Composio API: {e}")
+                                                    server_tools = []
                                             else:
+                                                print(f"Could not extract user_id from URL")
                                                 server_tools = []
                                         else:
+                                            print(f"Different error code, not attempting fallback")
                                             server_tools = []
                                     elif result and "result" in result:
                                         server_tools = result["result"].get("tools", [])
