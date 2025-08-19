@@ -1372,13 +1372,14 @@ async def websocket_chat(websocket: WebSocket):
                                     else:
                                         print(f"🔧 Unexpected tools/list response format: {result}")
                                         server_tools = []
-                            # Local server via mcpd
-                            async with httpx.AsyncClient() as client:
-                                response = await client.get(f"{MCPD_BASE_URL}/servers/{server}/tools")
-                                if response.status_code == 200:
-                                    server_tools = response.json().get("tools", [])
                                 else:
-                                    server_tools = []
+                                    # Local server via mcpd  
+                                    async with httpx.AsyncClient() as client:
+                                        response = await client.get(f"{MCPD_BASE_URL}/servers/{server}/tools")
+                                        if response.status_code == 200:
+                                            server_tools = response.json().get("tools", [])
+                                        else:
+                                            server_tools = []
                         
                         print(f"Server {server}: Found {len(server_tools)} tools")
                         

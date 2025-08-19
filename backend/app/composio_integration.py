@@ -612,11 +612,14 @@ class ComposioIntegration:
             
             # Build the request data using WORKING v3 API format
             # We discovered that using toolkits + connection_ids works, NOT authConfigId + apps
+            print(f"🚀🚀🚀 BUILDING REQUEST WITH FIXED FORMAT 🚀🚀🚀")
+            print(f"Using toolkits: [{app_name.upper()}], NOT apps/authConfigId")
             data = {
                 "name": safe_name,  # Name with only allowed characters
                 "toolkits": [app_name.upper()],  # Use toolkits, not apps - THIS IS THE FIX
                 "entity_id": user_id,  # Link to user
             }
+            print(f"Initial data structure: {data}")
             
             # Add connection_id if we have it - THIS IS CRITICAL for tools to work
             if connection_id:
