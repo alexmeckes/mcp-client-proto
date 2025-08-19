@@ -107,28 +107,73 @@ class ComposioIntegration:
         Returns:
             List of available tools
         """
-        if not self.is_configured():
+        if not self.api_key:
+            logger.error("Composio API key not configured")
             return []
         
         try:
-            # Get entity
-            entity = self.client.get_entity(id=user_id)
+            import httpx
             
-            # Get tools for connected apps
+            # Use the REST API directly since SDK method is unclear
+            headers = {
+                "X-API-Key": self.api_key,
+                "Content-Type": "application/json"
+            }
+            
+            # Build query parameters
+            params = {}
             if app_name:
-                tools = self.toolset.get_tools(apps=[app_name.upper()], entity_id=user_id)
-            else:
-                tools = self.toolset.get_tools(entity_id=user_id)
+                # Use the apps parameter to filter by app
+                params["apps"] = app_name.upper()  # GMAIL, SLACK, etc.
             
-            return [
-                {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "app": tool.app,
-                    "parameters": tool.parameters if hasattr(tool, 'parameters') else {}
-                }
-                for tool in tools
-            ]
+            # Add entity_id to get tools for this specific user
+            params["entity_id"] = user_id
+            
+            async with httpx.AsyncClient() as client:
+                # Try v3 API first, then fallback to v1
+                response = await client.get(
+                    "https://backend.composio.dev/api/v3/tools",
+                    headers=headers,
+                    params=params,
+                    timeout=30.0
+                )
+                
+                # If v3 fails, try v1
+                if response.status_code == 404:
+                    logger.info("v3 API not found, trying v1...")
+                    response = await client.get(
+                        "https://backend.composio.dev/api/v1/tools",
+                        headers=headers,
+                        params=params,
+                        timeout=30.0
+                    )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    logger.info(f"API response keys: {data.keys()}")
+                    
+                    # Try different possible response formats
+                    tools = data.get("items", data.get("tools", data.get("data", [])))
+                    
+                    # Log the raw response structure for debugging
+                    if not tools and data:
+                        logger.info(f"Raw API response (first 500 chars): {str(data)[:500]}")
+                    
+                    result = []
+                    for tool in tools:
+                        result.append({
+                            "name": tool.get("name", ""),
+                            "description": tool.get("description", ""),
+                            "app": tool.get("app", app_name or ""),
+                            "parameters": tool.get("parameters", tool.get("input_schema", {}))
+                        })
+                    
+                    logger.info(f"Found {len(result)} tools for {app_name or 'all apps'}")
+                    return result
+                else:
+                    logger.error(f"Failed to get tools: {response.status_code} - {response.text[:200]}")
+                    return []
+                    
         except Exception as e:
             logger.error(f"Failed to get tools: {e}")
             return []
