@@ -87,12 +87,31 @@ class ComposioIntegration:
             result = []
             for conn in connections:
                 # Log the actual connection object to understand its structure
-                logger.info(f"Connection object: app={conn.appName if hasattr(conn, 'appName') else 'N/A'}, id={conn.id if hasattr(conn, 'id') else 'N/A'}")
+                # Check all available attributes
+                conn_dict = {}
+                if hasattr(conn, '__dict__'):
+                    conn_dict = conn.__dict__
+                    logger.info(f"Connection attributes: {list(conn_dict.keys())}")
+                
+                # Try to find auth_config_id
+                auth_config_id = None
+                if hasattr(conn, 'authConfigId'):
+                    auth_config_id = conn.authConfigId
+                elif hasattr(conn, 'auth_config_id'):
+                    auth_config_id = conn.auth_config_id
+                elif hasattr(conn, 'authConfig'):
+                    auth_config_id = conn.authConfig
+                
+                logger.info(f"Connection: app={conn.appName if hasattr(conn, 'appName') else 'N/A'}, "
+                          f"id={conn.id if hasattr(conn, 'id') else 'N/A'}, "
+                          f"auth_config_id={auth_config_id}")
+                
                 result.append({
                     "app": conn.appName if hasattr(conn, 'appName') else None,
                     "status": conn.status if hasattr(conn, 'status') else None,
                     "connected_at": conn.createdAt if hasattr(conn, 'createdAt') else None,
-                    "connection_id": conn.id if hasattr(conn, 'id') else None
+                    "connection_id": conn.id if hasattr(conn, 'id') else None,
+                    "auth_config_id": auth_config_id  # Add auth_config_id to result
                 })
             
             return result
@@ -308,19 +327,82 @@ class ComposioIntegration:
             for conn in connections:
                 # Log all fields to see what's available
                 logger.info(f"Connection fields: {conn.keys()}")
-                logger.info(f"Connection: app={conn.get('app')}, appName={conn.get('appName')}, id={conn.get('connection_id')}, connectedAccountId={conn.get('connectedAccountId')}")
+                logger.info(f"Connection details: {json.dumps(conn, indent=2)[:500]}")
                 
                 # Try different field names for the app
                 conn_app = conn.get("app") or conn.get("appName") or ""
                 if conn_app.lower() == app_name.lower():
-                    # Try different field names for the auth config ID
-                    auth_config_id = conn.get("connection_id") or conn.get("connectedAccountId") or conn.get("id")
-                    logger.info(f"Found auth_config_id for {app_name}: {auth_config_id}")
+                    # Look for auth_config_id in different fields
+                    # It should start with "ac_" according to Composio docs
+                    possible_fields = ["auth_config_id", "authConfigId", "auth_config", "authConfig"]
+                    for field in possible_fields:
+                        if field in conn and conn[field] and str(conn[field]).startswith("ac_"):
+                            auth_config_id = conn[field]
+                            logger.info(f"Found auth_config_id in field '{field}': {auth_config_id}")
+                            break
+                    
+                    # If not found, log warning and try connection_id as fallback
+                    if not auth_config_id:
+                        logger.warning(f"No auth_config_id (starting with 'ac_') found in connection")
+                        # Use connection_id as fallback (might not work)
+                        auth_config_id = conn.get("connection_id") or conn.get("connectedAccountId") or conn.get("id")
+                        logger.warning(f"Using fallback ID (may not work): {auth_config_id}")
                     break
             
             if not auth_config_id:
-                logger.error(f"No auth config found for {app_name}. User needs to connect the app first.")
-                return None
+                # Try to get or create auth config for the app
+                logger.warning(f"No auth_config_id found in connections, attempting to fetch/create one")
+                
+                try:
+                    # Try to get auth configs for the app
+                    async with httpx.AsyncClient() as client:
+                        # Try to get existing auth configs
+                        auth_response = await client.get(
+                            f"https://backend.composio.dev/api/v1/auth-configs",
+                            headers=headers,
+                            params={"app": app_name.upper()},
+                            timeout=30.0
+                        )
+                        
+                        if auth_response.status_code == 200:
+                            auth_configs = auth_response.json()
+                            logger.info(f"Auth configs response: {json.dumps(auth_configs, indent=2)[:500]}")
+                            
+                            # Look for an auth config we can use
+                            if isinstance(auth_configs, list) and len(auth_configs) > 0:
+                                auth_config_id = auth_configs[0].get("id")
+                                logger.info(f"Using existing auth config: {auth_config_id}")
+                            elif isinstance(auth_configs, dict):
+                                items = auth_configs.get("items", auth_configs.get("data", []))
+                                if items and len(items) > 0:
+                                    auth_config_id = items[0].get("id")
+                                    logger.info(f"Using existing auth config: {auth_config_id}")
+                        
+                        # If still no auth config, try creating one
+                        if not auth_config_id:
+                            logger.info(f"Creating new auth config for {app_name}")
+                            create_response = await client.post(
+                                "https://backend.composio.dev/api/v1/auth-configs",
+                                headers=headers,
+                                json={
+                                    "app": app_name.upper(),
+                                    "useComposioAuth": True  # Use Composio's managed auth
+                                },
+                                timeout=30.0
+                            )
+                            
+                            if create_response.status_code in [200, 201]:
+                                auth_config = create_response.json()
+                                auth_config_id = auth_config.get("id")
+                                logger.info(f"Created auth config: {auth_config_id}")
+                            else:
+                                logger.error(f"Failed to create auth config: {create_response.status_code} - {create_response.text[:200]}")
+                except Exception as e:
+                    logger.error(f"Error getting/creating auth config: {e}")
+                
+                if not auth_config_id:
+                    logger.error(f"No auth config found for {app_name}. User needs to connect the app first.")
+                    return None
             
             # Create MCP server with the connected app
             # Name must be 4-30 chars, only letters, numbers, spaces, and hyphens (no underscores)
