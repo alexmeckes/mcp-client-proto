@@ -192,14 +192,34 @@ class AddMCPServerRequest(BaseModel):
 
 @app.post("/composio/add-mcp-server")
 async def add_composio_mcp_server(request: AddMCPServerRequest):
-    """Add a Composio app as an MCP server using direct URL"""
+    """Add a Composio app as an MCP server by creating a server instance"""
     print(f"Adding MCP server for {request.app_name} for user {request.user_id}")
     
-    # Generate the MCP URL
-    mcp_url = composio.get_mcp_url_for_app(request.user_id, request.app_name)
     server_name = f"composio-{request.app_name}"
+    mapping_key = f"{request.user_id}:{request.app_name}"
     
-    # Add to remote MCP servers using the existing structure
+    # Check if we already have a server for this user/app combination
+    if mapping_key in mcp_server_mappings:
+        server_uuid = mcp_server_mappings[mapping_key]
+        mcp_url = f"https://mcp.composio.dev/composio/server/{server_uuid}"
+        print(f"Using existing MCP server {server_uuid} for {request.app_name}")
+    else:
+        # Create a new MCP server instance via Composio API
+        server_result = await composio.create_mcp_server(request.user_id, request.app_name)
+        
+        if not server_result:
+            # Fallback to old method if server creation fails
+            print(f"Failed to create MCP server via API, using fallback URL")
+            mcp_url = composio.get_mcp_url_for_app(request.user_id, request.app_name)
+        else:
+            server_uuid = server_result["server_id"]
+            mcp_url = server_result["url"]
+            
+            # Store the mapping
+            mcp_server_mappings[mapping_key] = server_uuid
+            print(f"Created new MCP server {server_uuid} for {request.app_name}")
+    
+    # Add to remote MCP servers
     remote_mcp_servers[server_name] = RemoteServerConfig(
         name=server_name,
         endpoint=mcp_url,
@@ -853,8 +873,12 @@ async def websocket_chat(websocket: WebSocket):
                                         print(f"Error response: {e.response.text[:500]}")
                                     raise
                                 
+                                # Check if it's actually an error response
+                                if tool_response.status_code >= 400:
+                                    print(f"Tool fetch failed for {server}: {tool_response.text[:200]}")
+                                    server_tools = []
                                 # Handle Composio's SSE response
-                                if is_composio and tool_response.headers.get("content-type", "").startswith("text/event-stream"):
+                                elif is_composio and tool_response.headers.get("content-type", "").startswith("text/event-stream"):
                                     text = tool_response.text
                                     result = None
                                     for line in text.split('\n'):
@@ -1189,6 +1213,10 @@ class QuickAddRequest(BaseModel):
 
 # Store remote MCP servers (in production, persist to database)
 remote_mcp_servers: Dict[str, RemoteServerConfig] = {}
+
+# Store MCP server UUID mappings: key = "{user_id}:{app_name}", value = server_uuid
+# In production, use a database
+mcp_server_mappings: Dict[str, str] = {}
 
 def _default_config_paths():
     cfg_env = os.getenv("MCPD_CONFIG_FILE")

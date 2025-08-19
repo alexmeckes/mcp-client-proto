@@ -167,25 +167,88 @@ class ComposioIntegration:
                 "error": str(e)
             }
     
-    async def create_mcp_server(self, user_id: str, app_name: str) -> Optional[str]:
+    async def create_mcp_server(self, user_id: str, app_name: str) -> Optional[Dict[str, str]]:
         """
-        Create an MCP server instance for a connected app
+        Create an MCP server instance for a connected app via Composio API
         
         Args:
             user_id: User identifier (entity ID in Composio)
             app_name: Name of the app
         
         Returns:
-            MCP server URL or None if failed
+            Dict with server_id and url, or None if failed
         """
-        if not self.is_configured():
+        if not self.api_key:
+            logger.error("Composio API key not configured")
             return None
             
         try:
-            # For now, return a simple URL format
-            # TODO: Call Composio API to create proper MCP server instance
-            # The actual implementation would use self.client to create the server
-            return f"https://mcp.composio.dev/{app_name.lower()}/mcp?customerId={user_id}"
+            import httpx
+            
+            # Call Composio API to create MCP server
+            headers = {
+                "X-API-Key": self.api_key,
+                "Content-Type": "application/json"
+            }
+            
+            # Create MCP server with the connected app
+            data = {
+                "apps": [app_name.upper()],  # Apps should be uppercase (GMAIL, SLACK, etc)
+                "entity_id": user_id,
+                "name": f"{app_name}_mcp_{user_id[:8]}"  # Unique name for the server
+            }
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    "https://backend.composio.dev/api/v1/mcp/servers",
+                    headers=headers,
+                    json=data,
+                    timeout=30.0
+                )
+                
+                if response.status_code == 200 or response.status_code == 201:
+                    result = response.json()
+                    server_id = result.get("id") or result.get("server_id") or result.get("serverId")
+                    
+                    if server_id:
+                        # Construct the MCP URL with the server UUID
+                        mcp_url = f"https://mcp.composio.dev/composio/server/{server_id}"
+                        logger.info(f"Created MCP server {server_id} for {app_name}")
+                        return {
+                            "server_id": server_id,
+                            "url": mcp_url
+                        }
+                    else:
+                        logger.error(f"No server ID in response: {result}")
+                        return None
+                else:
+                    error_text = response.text[:500] if response.text else "No error message"
+                    logger.error(f"Failed to create MCP server: {response.status_code} - {error_text}")
+                    
+                    # If it's a 404, the API endpoint might be different
+                    if response.status_code == 404:
+                        logger.info("Trying alternative endpoint...")
+                        # Try the generate endpoint instead
+                        response2 = await client.post(
+                            "https://backend.composio.dev/api/v1/mcp/servers/generate",
+                            headers=headers,
+                            json=data,
+                            timeout=30.0
+                        )
+                        if response2.status_code in [200, 201]:
+                            result2 = response2.json()
+                            if "url" in result2:
+                                # Extract server ID from URL if present
+                                import re
+                                match = re.search(r'/server/([a-f0-9-]+)', result2["url"])
+                                if match:
+                                    server_id = match.group(1)
+                                    return {
+                                        "server_id": server_id,
+                                        "url": result2["url"]
+                                    }
+                    return None
+                    
         except Exception as e:
             logger.error(f"Failed to create MCP server: {e}")
             return None
