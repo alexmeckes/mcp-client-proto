@@ -248,17 +248,33 @@ class ComposioIntegration:
                 "Content-Type": "application/json"
             }
             
-            # First check if the user has this app connected
+            # First check if the user has this app connected and get auth_config_id
             logger.info(f"Creating MCP server for {app_name} with entity {user_id}")
             
+            # Get the user's connections to find the auth_config_id
+            connections = await self.get_user_connections(user_id)
+            logger.info(f"Found {len(connections)} connections for user")
+            
+            auth_config_id = None
+            for conn in connections:
+                logger.info(f"Connection: app={conn.get('app')}, id={conn.get('connection_id')}")
+                if conn.get("app", "").lower() == app_name.lower():
+                    auth_config_id = conn.get("connection_id")
+                    logger.info(f"Found auth_config_id for {app_name}: {auth_config_id}")
+                    break
+            
+            if not auth_config_id:
+                logger.error(f"No auth config found for {app_name}. User needs to connect the app first.")
+                return None
+            
             # Create MCP server with the connected app
-            # Try including more explicit configuration
+            # Name must be 4-30 chars, only letters, numbers, spaces, and hyphens (no underscores)
+            safe_name = f"{app_name}-mcp-{user_id[:8]}".replace("_", "-")
+            
             data = {
-                "apps": [app_name.upper()],  # Apps should be uppercase (GMAIL, SLACK, etc)
-                "entity_id": user_id,
-                "name": f"{app_name}_mcp_{user_id[:8]}",  # Unique name for the server
-                "enabled": True,  # Explicitly enable the server
-                "include_tools": True  # Try to explicitly include tools
+                "name": safe_name,  # Name with only allowed characters
+                "auth_config_ids": [auth_config_id],  # Required: auth config from OAuth connection
+                "apps": [app_name.upper()]  # Apps should be uppercase (GMAIL, SLACK, etc)
             }
             
             logger.info(f"MCP server creation request: {json.dumps(data)}")
@@ -365,9 +381,10 @@ class ComposioIntegration:
         Returns:
             MCP-compatible URL
         """
-        # Composio MCP endpoints
-        # Based on docs, try using 'mcp' as the customerId
-        return f"https://mcp.composio.dev/{app_name.lower()}/mcp?customerId=mcp"
+        # This is a fallback - we should really create a proper MCP server
+        # Just return a placeholder that won't work
+        logger.error(f"Fallback URL requested for {app_name} - MCP server creation failed")
+        return f"https://mcp.composio.dev/error/no-server-created"
     
     async def disconnect_app(self, user_id: str, connection_id: str) -> bool:
         """
