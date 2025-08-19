@@ -1061,6 +1061,11 @@ async def websocket_chat(websocket: WebSocket):
                                                             if "protocolVersion" in init_result["result"]:
                                                                 negotiated_protocol = init_result["result"]["protocolVersion"]
                                                                 print(f"Negotiated protocol version: {negotiated_protocol}")
+                                                                
+                                                                # Store protocol version in server config for tool execution
+                                                                if server in remote_mcp_servers:
+                                                                    remote_mcp_servers[server].headers["Mcp-Protocol-Version"] = negotiated_protocol
+                                                                    print(f"Stored protocol version for {server}: {negotiated_protocol}")
                                                             
                                                             # Check various possible locations for tools
                                                             if "tools" in init_result["result"] and isinstance(init_result["result"]["tools"], list):
@@ -1094,6 +1099,11 @@ async def websocket_chat(websocket: WebSocket):
                                                 if "protocolVersion" in init_result["result"]:
                                                     negotiated_protocol = init_result["result"]["protocolVersion"]
                                                     print(f"Negotiated protocol version: {negotiated_protocol}")
+                                                    
+                                                    # Store protocol version in server config for tool execution
+                                                    if server in remote_mcp_servers:
+                                                        remote_mcp_servers[server].headers["Mcp-Protocol-Version"] = negotiated_protocol
+                                                        print(f"Stored protocol version for {server}: {negotiated_protocol}")
                                                 
                                                 if "tools" in init_result["result"] and isinstance(init_result["result"]["tools"], list):
                                                     print(f"Tools found as array in initialize response!")
@@ -1714,9 +1724,12 @@ async def websocket_chat(websocket: WebSocket):
                                     
                                     if is_composio:
                                         headers["Accept"] = "application/json, text/event-stream"
-                                        # Debug: Check if we have session ID
+                                        # Protocol version should already be in headers from negotiation
+                                        if "Mcp-Protocol-Version" not in headers:
+                                            headers["Mcp-Protocol-Version"] = "2025-03-26"  # Fallback
+                                        # Debug: Check if we have session ID and protocol version
                                         if "Mcp-Session-Id" in headers:
-                                            print(f"🔧 Tool execution with session ID: {headers['Mcp-Session-Id']}")
+                                            print(f"🔧 Tool execution with session ID: {headers['Mcp-Session-Id']} and protocol: {headers.get('Mcp-Protocol-Version', 'unknown')}")
                                         else:
                                             print(f"⚠️  Tool execution WITHOUT session ID for {server_name}")
                                     elif config.auth_token:
