@@ -1367,6 +1367,21 @@ async def websocket_chat(websocket: WebSocket):
             tools = unique_tools
             print(f"Total unique tools: {len(tools)}")
             
+            # Limit tools if there are too many (to avoid overloading the API)
+            max_tools = 50  # Anthropic can handle many tools, but let's be reasonable
+            if len(tools) > max_tools:
+                print(f"Warning: {len(tools)} tools exceeds limit of {max_tools}, truncating...")
+                # Prioritize Composio tools (Gmail, etc) by keeping those that start with "composio"
+                composio_tools = [t for t in tools if t["function"]["name"].startswith("composio")]
+                other_tools = [t for t in tools if not t["function"]["name"].startswith("composio")]
+                
+                # Take all Composio tools first, then fill with others
+                tools = composio_tools[:max_tools]
+                if len(tools) < max_tools:
+                    tools.extend(other_tools[:max_tools - len(tools)])
+                
+                print(f"Reduced to {len(tools)} tools (prioritizing Composio services)")
+            
             # Format messages for the model
             llm_messages = [
                 {"role": msg["role"], "content": msg["content"]} 
@@ -1387,19 +1402,55 @@ async def websocket_chat(websocket: WebSocket):
                     })
                 
                 # Use any-llm for all model calls (with or without tools)
-                try:
-                    response = await asyncio.to_thread(
-                        completion,
-                        model=model,
-                        messages=llm_messages,
-                        tools=tools if tools else None,
-                        max_tokens=4096
-                    )
-                except Exception as e:
-                    print(f"Error calling model: {e}")
-                    if tools:
-                        print(f"Tools passed: {json.dumps(tools[:1], indent=2)}")  # Print first tool for debugging
-                    raise
+                max_retries = 3
+                retry_delay = 1
+                response = None
+                
+                for attempt in range(max_retries):
+                    try:
+                        response = await asyncio.to_thread(
+                            completion,
+                            model=model,
+                            messages=llm_messages,
+                            tools=tools if tools else None,
+                            max_tokens=4096
+                        )
+                        break  # Success, exit retry loop
+                    except Exception as e:
+                        error_str = str(e)
+                        print(f"Error calling model (attempt {attempt + 1}/{max_retries}): {e}")
+                        
+                        # Check if it's a 529 overloaded error
+                        if "529" in error_str or "overloaded" in error_str.lower():
+                            if attempt < max_retries - 1:
+                                wait_time = retry_delay * (2 ** attempt)  # Exponential backoff
+                                print(f"API overloaded, retrying in {wait_time} seconds...")
+                                await websocket.send_json({
+                                    "type": "status",
+                                    "message": f"API overloaded, retrying in {wait_time}s..."
+                                })
+                                await asyncio.sleep(wait_time)
+                                continue
+                            else:
+                                # Final attempt failed
+                                await websocket.send_json({
+                                    "type": "error",
+                                    "message": "The API is currently overloaded. Please try again in a moment."
+                                })
+                                return
+                        
+                        # For other errors, log and raise
+                        if tools:
+                            print(f"Number of tools: {len(tools)}")
+                            print(f"First tool: {json.dumps(tools[0], indent=2) if tools else 'No tools'}")
+                        raise
+                
+                if response is None:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "Failed to get response from model after retries"
+                    })
+                    return
                 
                 # Check if response contains tool calls
                 has_tool_calls = False
@@ -1533,13 +1584,45 @@ async def websocket_chat(websocket: WebSocket):
                             "content": json.dumps(tool_result)
                         })
                     
-                    # Continue conversation with tool results
-                    final_response = await asyncio.to_thread(
-                        completion,
-                        model=model,
-                        messages=llm_messages,
-                        max_tokens=4096
-                    )
+                    # Continue conversation with tool results with retry logic
+                    final_response = None
+                    for attempt in range(max_retries):
+                        try:
+                            final_response = await asyncio.to_thread(
+                                completion,
+                                model=model,
+                                messages=llm_messages,
+                                max_tokens=4096
+                            )
+                            break
+                        except Exception as e:
+                            error_str = str(e)
+                            print(f"Error calling model after tools (attempt {attempt + 1}/{max_retries}): {e}")
+                            
+                            if "529" in error_str or "overloaded" in error_str.lower():
+                                if attempt < max_retries - 1:
+                                    wait_time = retry_delay * (2 ** attempt)
+                                    print(f"API overloaded after tools, retrying in {wait_time} seconds...")
+                                    await websocket.send_json({
+                                        "type": "status",
+                                        "message": f"API overloaded, retrying in {wait_time}s..."
+                                    })
+                                    await asyncio.sleep(wait_time)
+                                    continue
+                                else:
+                                    await websocket.send_json({
+                                        "type": "error",
+                                        "message": "The API is currently overloaded. Please try again in a moment."
+                                    })
+                                    return
+                            raise
+                    
+                    if final_response is None:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "Failed to get response after tool execution"
+                        })
+                        return
                     
                     # Send final response
                     if hasattr(final_response, 'choices') and len(final_response.choices) > 0:
