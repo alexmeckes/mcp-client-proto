@@ -1169,8 +1169,11 @@ async def websocket_chat(websocket: WebSocket):
                                                 "server": server
                                             })
                                         continue
+                                    else:
+                                        print(f"🔧 No tools found in init response, will call tools/list. server_tools={server_tools}")
                                 
                                 try:
+                                    print(f"🔧 Starting tools/list section for {server}")
                                     # Prepare headers for tools/list request
                                     tools_headers = headers.copy()
                                     tools_headers["Accept"] = "application/json, text/event-stream"
@@ -1305,10 +1308,20 @@ async def websocket_chat(websocket: WebSocket):
                                     print(f"Request URL: {config.endpoint}")
                                     if hasattr(e, 'response') and e.response:
                                         print(f"Error response: {e.response.text[:500]}")
-                                    raise
+                                    server_tools = []
+                                    tool_response = None
+                                except Exception as e:
+                                    print(f"🔧 Unexpected error in tools/list: {type(e).__name__}: {str(e)}")
+                                    import traceback
+                                    print(f"🔧 Traceback: {traceback.format_exc()}")
+                                    server_tools = []
+                                    tool_response = None
                                 
                                 # Check if it's actually an error response
-                                if tool_response.status_code >= 400:
+                                if tool_response is None:
+                                    print(f"🔧 tool_response is None, skipping to next server")
+                                    server_tools = []
+                                elif tool_response.status_code >= 400:
                                     print(f"Tool fetch failed for {server}: {tool_response.text[:200]}")
                                     server_tools = []
                                 # Handle Composio's response (might be SSE or regular JSON)
