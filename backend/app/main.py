@@ -1536,6 +1536,18 @@ async def websocket_chat(websocket: WebSocket):
                 for msg in messages
             ]
             
+            # Add system message about available Gmail tools if present
+            gmail_tools = [t for t in tools if "GMAIL" in t["function"]["name"]]
+            if gmail_tools:
+                gmail_tool_names = [t["function"]["name"].replace("composio_gmail__", "") for t in gmail_tools[:5]]
+                system_msg = f"You have access to {len(gmail_tools)} Gmail tools including: {', '.join(gmail_tool_names)}... Use these tools to help the user with their email tasks."
+                print(f"🔧 Adding Gmail tools system message: {system_msg}")
+                # Insert at the beginning if no system message, or append to first system message
+                if llm_messages and llm_messages[0]["role"] == "system":
+                    llm_messages[0]["content"] += f"\n\n{system_msg}"
+                else:
+                    llm_messages.insert(0, {"role": "system", "content": system_msg})
+            
             # Call the model using any-llm for all providers
             try:
                 if tools:
@@ -1553,6 +1565,14 @@ async def websocket_chat(websocket: WebSocket):
                 max_retries = 3
                 retry_delay = 1
                 response = None
+                
+                # Debug: Log the tools being sent to the model
+                if tools:
+                    print(f"🔧 Sending {len(tools)} tools to model {model}")
+                    for i, tool in enumerate(tools[:3]):  # Log first 3 tools
+                        print(f"🔧 Tool {i}: {tool['function']['name']}")
+                else:
+                    print(f"🔧 No tools being sent to model {model}")
                 
                 for attempt in range(max_retries):
                     try:
