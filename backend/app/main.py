@@ -1273,11 +1273,28 @@ async def websocket_chat(websocket: WebSocket):
                                         "id": 2
                                     }
                                     print(f"Sending tools/list request: {json.dumps(tools_request)}")
-                                    tool_response = await client.post(
-                                        config.endpoint,
-                                        headers=tools_headers,
-                                        json=tools_request
-                                    )
+                                    print(f"Endpoint: {config.endpoint}")
+                                    print(f"Headers: {tools_headers}")
+                                    
+                                    # Add timeout to prevent hanging
+                                    try:
+                                        tool_response = await asyncio.wait_for(
+                                            client.post(
+                                                config.endpoint,
+                                                headers=tools_headers,
+                                                json=tools_request
+                                            ),
+                                            timeout=15.0  # 15 second timeout
+                                        )
+                                        print(f"🔧 tools/list response received")
+                                    except asyncio.TimeoutError:
+                                        print(f"🔧 ERROR: tools/list request timed out after 15 seconds!")
+                                        server_tools = []
+                                        continue
+                                    except Exception as e:
+                                        print(f"🔧 ERROR sending tools/list: {type(e).__name__}: {str(e)}")
+                                        server_tools = []
+                                        continue
                                     
                                     # If tools/list fails, try Composio-specific methods
                                     if tool_response.status_code == 200:
