@@ -1289,7 +1289,12 @@ async def websocket_chat(websocket: WebSocket):
                                     print(f"🔧 tools/list response status: {tool_response.status_code}")
                                     print(f"🔧 tools/list response headers: {dict(tool_response.headers)}")
                                     print(f"🔧 tools/list content-type: {tool_response.headers.get('content-type', 'unknown')}")
-                                    print(f"🔧 tools/list response body: {tool_response.text[:1000]}")
+                                    print(f"🔧 tools/list response length: {len(tool_response.text)} chars")
+                                    print(f"🔧 tools/list response first 1000 chars: {tool_response.text[:1000]}")
+                                    
+                                    # Check if it's an SSE response
+                                    if tool_response.headers.get("content-type", "").startswith("text/event-stream"):
+                                        print(f"🔧 tools/list returned SSE response - will parse in Composio section")
                                     
                                     if tool_response.status_code >= 400:
                                         print(f"🔧 HTTP error response for tools/list")
@@ -1341,6 +1346,10 @@ async def websocket_chat(websocket: WebSocket):
                                             print(f"🔧 Failed to parse any valid JSON from SSE response")
                                             print(f"🔧 First 500 chars: {text[:500]}")
                                             print(f"🔧 Last 500 chars: {text[-500:]}")
+                                            server_tools = []
+                                        else:
+                                            print(f"🔧 Successfully parsed SSE response, result type: {type(result)}")
+                                            print(f"🔧 Result keys: {list(result.keys()) if isinstance(result, dict) else 'not a dict'}")
                                     else:
                                         # Regular JSON response
                                         try:
