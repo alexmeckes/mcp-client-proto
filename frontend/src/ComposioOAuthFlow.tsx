@@ -8,12 +8,10 @@ interface ComposioOAuthFlowProps {
 }
 
 const AVAILABLE_APPS = [
-  { id: 'github', name: 'GitHub', icon: '🐙', description: 'Repos, Issues, PRs' },
-  { id: 'slack', name: 'Slack', icon: '💬', description: 'Messages, Channels' },
-  { id: 'notion', name: 'Notion', icon: '📝', description: 'Pages, Databases' },
-  { id: 'gmail', name: 'Gmail', icon: '📧', description: 'Send emails, manage inbox' },
-  { id: 'linear', name: 'Linear', icon: '📊', description: 'Issues, Projects' },
-  { id: 'discord', name: 'Discord', icon: '🎮', description: 'Messages, Servers' },
+  { id: 'gmail', name: 'Gmail', icon: '📧', description: 'Read, send, and manage emails' },
+  { id: 'github', name: 'GitHub', icon: '🐙', description: 'Create issues, manage repos' },
+  { id: 'slack', name: 'Slack', icon: '💬', description: 'Send messages, search chats' },
+  { id: 'notion', name: 'Notion', icon: '📝', description: 'Create pages, update databases' },
 ]
 
 export default function ComposioOAuthFlow({ onServerAdded }: ComposioOAuthFlowProps) {
@@ -190,7 +188,7 @@ export default function ComposioOAuthFlow({ onServerAdded }: ComposioOAuthFlowPr
           Connect your accounts securely through Composio. Click any tool below to authenticate.
         </p>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-3">
           {AVAILABLE_APPS.map((app) => {
             const isConnected = connectedApps.has(app.id)
             const isConnecting = connecting === app.id
@@ -241,9 +239,11 @@ export default function ComposioOAuthFlow({ onServerAdded }: ComposioOAuthFlowPr
         </div>
 
         {connectedApps.size > 0 && (
-          <div className="mt-3 flex items-center gap-2 text-xs text-green-600">
-            <Check className="w-3 h-3" />
-            {connectedApps.size} tool{connectedApps.size !== 1 ? 's' : ''} connected and ready
+          <div className="mt-4 p-2 bg-green-50 border border-green-200 rounded-lg">
+            <div className="flex items-center gap-2 text-sm text-green-700">
+              <Check className="w-4 h-4" />
+              ✨ {connectedApps.size} tool{connectedApps.size !== 1 ? 's' : ''} ready for AI assistant
+            </div>
           </div>
         )}
 
