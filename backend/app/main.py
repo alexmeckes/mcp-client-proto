@@ -1715,8 +1715,16 @@ async def websocket_chat(websocket: WebSocket):
                     })
                     return
                 
-                # Debug: Log the response structure
-                print(f"🔧 Model response type: {type(response)}")
+                # Multi-round tool execution loop
+                max_tool_rounds = 5  # Prevent infinite loops
+                tool_round = 0
+                
+                while tool_round < max_tool_rounds:
+                    tool_round += 1
+                    print(f"🔧 Tool execution round {tool_round}/{max_tool_rounds}")
+                    
+                    # Debug: Log the response structure
+                    print(f"🔧 Model response type: {type(response)}")
                 if hasattr(response, 'choices') and len(response.choices) > 0:
                     choice = response.choices[0]
                     print(f"🔧 Response content: {choice.message.content[:200]}...")
@@ -1957,14 +1965,22 @@ async def websocket_chat(websocket: WebSocket):
                         })
                         return
                     
-                    # Send final response
-                    print(f"🔧 Preparing to send final response")
-                    print(f"🔧 final_response type: {type(final_response)}")
-                    print(f"🔧 final_response has choices: {hasattr(final_response, 'choices')}")
+                    # Check if final response has more tool calls
+                    print(f"🔧 Checking if final response has more tool calls...")
                     
                     if hasattr(final_response, 'choices') and len(final_response.choices) > 0:
-                        final_text = final_response.choices[0].message.content
-                        print(f"🔧 Extracted final_text from choices: {final_text[:200] if final_text else 'None'}...")
+                        final_choice = final_response.choices[0]
+                        
+                        # Check for additional tool calls
+                        if hasattr(final_choice.message, 'tool_calls') and final_choice.message.tool_calls:
+                            print(f"🔧 Final response contains {len(final_choice.message.tool_calls)} MORE tool calls!")
+                            # Set response to final_response to continue the loop
+                            response = final_response
+                            continue  # Go back to the beginning of the while True loop
+                        
+                        # No more tool calls, send the final message
+                        final_text = final_choice.message.content
+                        print(f"🔧 No more tool calls. Sending final response: {final_text[:200] if final_text else 'None'}...")
                     else:
                         final_text = str(final_response)
                         print(f"🔧 Using str(final_response): {final_text[:200]}...")
@@ -1983,6 +1999,7 @@ async def websocket_chat(websocket: WebSocket):
                     
                     await websocket.send_json(final_message)
                     print(f"🔧 Final response sent successfully")
+                    break  # Exit the while True loop
                 else:
                     # No tool calls, just send the message
                     response_text = ""
@@ -2002,6 +2019,17 @@ async def websocket_chat(websocket: WebSocket):
                         "type": "message",
                         "role": "assistant",
                         "content": response_text,
+                        "model": model
+                    })
+                    break  # Exit the tool rounds loop
+                    
+                # End of tool rounds loop
+                if tool_round >= max_tool_rounds:
+                    print(f"🔧 Reached maximum tool rounds ({max_tool_rounds})")
+                    await websocket.send_json({
+                        "type": "message",
+                        "role": "assistant",
+                        "content": "I've reached the maximum number of tool execution rounds. The task may be incomplete.",
                         "model": model
                     })
                     
