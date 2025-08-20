@@ -122,15 +122,22 @@ function AppMultiModel() {
     try {
       const response = await axios.get(`${API_BASE}/servers`)
       console.log('Fetched servers:', response.data)
-      const serverList = response.data.map((server: any) => ({
-        name: typeof server === 'string' ? server : server.name,
-        type: server.type || 'local',
-        endpoint: server.endpoint,
-        // Auto-select Composio servers that are authenticated
-        selected: server.name?.startsWith('composio-') || false,
-        tools: []
-      }))
-      console.log('Processed server list:', serverList)
+      
+      // Preserve existing selection state when updating servers
+      const currentSelections = new Map(servers.map(s => [s.name, s.selected]))
+      
+      const serverList = response.data.map((server: any) => {
+        const serverName = typeof server === 'string' ? server : server.name
+        return {
+          name: serverName,
+          type: server.type || 'local',
+          endpoint: server.endpoint,
+          // Preserve existing selection, or auto-select Composio servers
+          selected: currentSelections.get(serverName) ?? (serverName?.startsWith('composio-') || false),
+          tools: []
+        }
+      })
+      console.log('Processed server list with preserved selections:', serverList)
       setServers(serverList)
     } catch (err) {
       console.error('Failed to fetch servers:', err)
@@ -297,9 +304,11 @@ function AppMultiModel() {
     setError(null)
     
     const selectedServers = servers.filter(s => s.selected).map(s => s.name)
+    console.log('Current servers state:', servers)
+    console.log('Selected servers being sent:', selectedServers)
     
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
+      const payload = {
         messages: [...messages, userMessage].map(m => ({
           role: m.role,
           content: m.content
@@ -307,7 +316,9 @@ function AppMultiModel() {
         available_servers: selectedServers,
         model: selectedModel,
         api_keys: apiKeys
-      }))
+      }
+      console.log('Sending WebSocket payload:', payload)
+      wsRef.current.send(JSON.stringify(payload))
     }
   }
 
