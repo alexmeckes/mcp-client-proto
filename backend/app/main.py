@@ -1591,7 +1591,14 @@ async def websocket_chat(websocket: WebSocket):
                             if i < 5:  # Log first 5 tools
                                 print(f"Added tool: {full_name}")
                         
-                        print(f"Added {tools_added_count} tools from {server} to final list")
+                        print(f"✅ Added {tools_added_count} tools from {server} to final list")
+                        # Log specific Gmail tools for debugging
+                        if "gmail" in server.lower():
+                            gmail_tools = [t for t in tools if "gmail" in t.get("type", {}).get("function", {}).get("name", "").lower()]
+                            print(f"🔧 Gmail-specific tools found: {len(gmail_tools)}")
+                            if gmail_tools:
+                                for gt in gmail_tools[:3]:
+                                    print(f"  - {gt['type']['function']['name']}")
                     except Exception as e:
                         print(f"Error getting tools for {server}: {e}")
                         continue
@@ -1609,6 +1616,16 @@ async def websocket_chat(websocket: WebSocket):
             
             tools = unique_tools
             print(f"Total unique tools: {len(tools)}")
+            
+            # Debug: Show Gmail tools in final list
+            gmail_tools_final = [t for t in tools if "gmail" in t.get("type", {}).get("function", {}).get("name", "").lower()]
+            print(f"🔧 Gmail tools in final unique list: {len(gmail_tools_final)}")
+            if gmail_tools_final:
+                print(f"🔧 Sample Gmail tools available:")
+                for gt in gmail_tools_final[:5]:
+                    tool_name = gt['type']['function']['name']
+                    tool_desc = gt['type']['function']['description'][:80]
+                    print(f"  - {tool_name}: {tool_desc}...")
             
             # Limit tools if there are too many (to avoid overloading the API)
             max_tools = 50  # Anthropic can handle many tools, but let's be reasonable
@@ -1664,6 +1681,15 @@ async def websocket_chat(websocket: WebSocket):
                 # Debug: Log the tools being sent to the model
                 if tools:
                     print(f"🔧 Sending {len(tools)} tools to model {model}")
+                    
+                    # Debug Gmail tools being sent
+                    gmail_in_final = [t for t in tools if "gmail" in t.get("function", {}).get("name", "").lower()]
+                    print(f"🔧 Gmail tools being sent to model: {len(gmail_in_final)}")
+                    if gmail_in_final:
+                        print("🔧 Gmail tool names:")
+                        for gt in gmail_in_final[:5]:
+                            print(f"  - {gt['function']['name']}")
+                    
                     for i, tool in enumerate(tools[:3]):  # Log first 3 tools
                         print(f"🔧 Tool {i}: {tool['function']['name']}")
                 else:
