@@ -1018,14 +1018,21 @@ async def websocket_chat(websocket: WebSocket):
     
     try:
         while True:
-            data = await websocket.receive_json()
+            print("🔧 Waiting for WebSocket message...")
+            try:
+                data = await websocket.receive_json()
+                print(f"🔧 Received WebSocket data: {json.dumps(data, default=str)[:500]}")
+            except Exception as e:
+                print(f"🔧 Error receiving WebSocket data: {e}")
+                break
+                
             messages = data.get("messages", [])
             available_servers = data.get("available_servers", [])
             model = data.get("model", "anthropic/claude-3-sonnet-20240229")
             api_keys = data.get("api_keys", {})
             
             # Debug logging
-            print(f"Chat request - Model: {model}, Servers: {available_servers}")
+            print(f"Chat request - Model: {model}, Servers: {available_servers}, Messages: {len(messages)}")
             
             # Update API keys if provided
             if api_keys:
@@ -2083,7 +2090,7 @@ async def websocket_chat(websocket: WebSocket):
                     
                     await websocket.send_json(final_message)
                     print(f"🔧 Final response sent successfully")
-                    break  # Exit the while True loop
+                    break  # Exit the tool rounds loop (not the main message loop)
                 else:
                     # No tool calls, just send the message
                     response_text = ""
@@ -2108,6 +2115,7 @@ async def websocket_chat(websocket: WebSocket):
                     break  # Exit the tool rounds loop
                     
                 # End of tool rounds loop
+                print("🔧 Exited tool rounds loop, continuing to wait for next message...")
                 if tool_round >= max_tool_rounds:
                     print(f"🔧 Reached maximum tool rounds ({max_tool_rounds})")
                     await websocket.send_json({
@@ -2124,12 +2132,19 @@ async def websocket_chat(websocket: WebSocket):
                 })
                 
     except WebSocketDisconnect:
+        print("🔧 WebSocket disconnected normally")
         pass
     except Exception as e:
-        await websocket.send_json({
-            "type": "error",
-            "message": str(e)
-        })
+        print(f"🔧 WebSocket error: {e}")
+        import traceback
+        print(f"🔧 Traceback: {traceback.format_exc()}")
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": str(e)
+            })
+        except:
+            print("🔧 Could not send error message to client")
 
 
 # Config-related classes and functions
