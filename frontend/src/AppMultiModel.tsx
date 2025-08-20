@@ -6,7 +6,6 @@ import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 // import ServerMarketplace from './ServerMarketplace' // MCPD removed
-import QuickAddServer from './QuickAddServer'
 import ComposioOAuthFlow from './ComposioOAuthFlow'
 
 import { API_BASE, WS_BASE } from './config'
@@ -504,9 +503,6 @@ function AppMultiModel() {
         
         {/* Composio OAuth Integration */}
         <ComposioOAuthFlow onServerAdded={fetchServers} />
-        
-        {/* Quick Add Server (Manual URL) */}
-        <QuickAddServer onServerAdded={fetchServers} />
         
         {/* Server Filter */}
         <div className="relative mb-4">
