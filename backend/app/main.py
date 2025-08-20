@@ -145,6 +145,20 @@ async def health_check():
 @app.get("/debug")
 async def debug_info():
     """Debug endpoint to check server status"""
+    # Include remote MCP servers info for debugging
+    remote_servers_info = {}
+    for name, config in remote_mcp_servers.items():
+        remote_servers_info[name] = {
+            "endpoint": config.endpoint,
+            "has_auth_token": bool(config.auth_token),
+            "headers": {k: v for k, v in config.headers.items() if k != "Authorization"}
+        }
+    
+    # Include MCP server mappings
+    mappings_info = {}
+    for key, value in mcp_server_mappings.items():
+        mappings_info[key] = value
+    
     return {
         "message": "Server is running!",
         "composio_status": "available" if composio else "unavailable",
@@ -152,7 +166,9 @@ async def debug_info():
             "PORT": os.getenv("PORT"),
             "COMPOSIO_API_KEY": "SET" if os.getenv("COMPOSIO_API_KEY") else "NOT SET",
             "MCPD_ENABLED": MCPD_ENABLED
-        }
+        },
+        "remote_mcp_servers": remote_servers_info,
+        "mcp_server_mappings": mappings_info
     }
 
 # Add startup debugging
@@ -353,6 +369,59 @@ async def add_composio_mcp_server(request: AddMCPServerRequest):
         "url": mcp_url,
         "added": True
     }
+
+@app.post("/fix-slack-mcp")
+async def fix_slack_mcp(request: AddMCPServerRequest):
+    """Force recreate Slack MCP server with correct user_id"""
+    try:
+        server_name = "composio-slack"
+        mapping_key = f"{request.user_id}:slack"
+        
+        # Remove old server if exists
+        if server_name in remote_mcp_servers:
+            del remote_mcp_servers[server_name]
+            print(f"Removed old Slack server")
+        
+        # Remove old mapping if exists
+        if mapping_key in mcp_server_mappings:
+            del mcp_server_mappings[mapping_key]
+            print(f"Removed old Slack mapping")
+        
+        # Create new server via Composio
+        server_result = await composio.create_mcp_server(request.user_id, "slack")
+        
+        if server_result:
+            server_uuid = server_result["server_id"]
+            # Ensure user_id is in the URL
+            mcp_url = server_result["url"]
+            if "user_id=" not in mcp_url:
+                # Add user_id if missing
+                separator = "&" if "?" in mcp_url else "?"
+                mcp_url = f"{mcp_url}{separator}user_id={request.user_id}"
+            
+            # Store the mapping
+            mcp_server_mappings[mapping_key] = server_uuid
+            
+            # Add to remote MCP servers with correct URL
+            remote_mcp_servers[server_name] = RemoteServerConfig(
+                name=server_name,
+                endpoint=mcp_url,
+                auth_token=None,
+                headers={"Content-Type": "application/json"}
+            )
+            
+            print(f"Fixed Slack MCP server with URL: {mcp_url}")
+            
+            return {
+                "success": True,
+                "server_id": server_uuid,
+                "url": mcp_url,
+                "message": f"Slack MCP server recreated with user_id: {request.user_id}"
+            }
+        else:
+            return {"success": False, "message": "Failed to create MCP server"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 @app.post("/refresh-mcpd")
 async def refresh_mcpd():
@@ -1730,6 +1799,20 @@ async def websocket_chat(websocket: WebSocket):
                                             print(f"⚠️  Tool execution WITHOUT session ID for {server_name}")
                                     elif config.auth_token:
                                         headers["Authorization"] = f"Bearer {config.auth_token}"
+                                    
+                                    # For Composio Slack, try to extract user_id and add it to arguments
+                                    if "slack" in server_name.lower() and is_composio:
+                                        # Extract user_id from the endpoint URL if present
+                                        import re
+                                        user_id_match = re.search(r'user_id=([^&]+)', config.endpoint)
+                                        if user_id_match:
+                                            extracted_user_id = user_id_match.group(1)
+                                            print(f"🔧 Extracted user_id from Slack endpoint: {extracted_user_id}")
+                                            # Try adding entity_id to the arguments for Slack
+                                            if not isinstance(arguments, dict):
+                                                arguments = {}
+                                            arguments["entity_id"] = extracted_user_id
+                                            print(f"🔧 Added entity_id to Slack tool arguments: {extracted_user_id}")
                                     
                                     tool_request = {
                                         "jsonrpc": "2.0",
