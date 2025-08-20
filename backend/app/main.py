@@ -1688,7 +1688,18 @@ async def websocket_chat(websocket: WebSocket):
                             tool_name = full_name
                         print(f"🔧 Parsed server_name: {server_name}, tool_name: {tool_name}")
                         print(f"🔧 Available remote servers: {list(remote_mcp_servers.keys())}")
-                            
+                        
+                        # Handle server name mismatch (underscores vs hyphens)
+                        actual_server_name = server_name
+                        if server_name not in remote_mcp_servers:
+                            # Try converting underscores to hyphens
+                            hyphen_name = server_name.replace('_', '-')
+                            if hyphen_name in remote_mcp_servers:
+                                actual_server_name = hyphen_name
+                                print(f"🔧 Using hyphen server name: {actual_server_name}")
+                            else:
+                                print(f"🔧 Server {server_name} not found in remote servers!")
+                        
                         # Parse arguments
                         try:
                             arguments = json.loads(tool_call.function.arguments)
@@ -1697,16 +1708,16 @@ async def websocket_chat(websocket: WebSocket):
                             
                         await websocket.send_json({
                             "type": "tool_call",
-                            "server": server_name,
+                            "server": actual_server_name,
                             "tool": tool_name,
                             "arguments": arguments
                         })
                         
                         # Execute tool (check if remote or local)
                         tool_result = {}
-                        if server_name in remote_mcp_servers:
+                        if actual_server_name in remote_mcp_servers:
                             # Remote server execution
-                            config = remote_mcp_servers[server_name]
+                            config = remote_mcp_servers[actual_server_name]
                             print(f"🔧 Tool execution config endpoint: {config.endpoint}")
                             print(f"🔧 Tool execution config headers: {config.headers}")
                             async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
