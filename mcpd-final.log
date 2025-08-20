@@ -1,9 +1,0 @@
-mcpd daemon running in 'dev' mode.
-
-  Local API:	http://localhost:8090/api/v1
-  OpenAPI UI:	http://localhost:8090/docs
-  Config file:	.mcpd.toml
-  Secrets file:	/Users/ameckes/.config/mcpd/secrets.dev.toml
-
-Press Ctrl+C to stop.
-
