@@ -201,8 +201,10 @@ function AppMultiModel() {
     
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data)
+      console.log('WebSocket message received:', data)
       
       if (data.type === 'message') {
+        console.log('Processing assistant message:', data.content?.substring(0, 100))
         setMessages(prev => [...prev, {
           role: data.role,
           content: data.content,

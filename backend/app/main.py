@@ -1958,17 +1958,31 @@ async def websocket_chat(websocket: WebSocket):
                         return
                     
                     # Send final response
+                    print(f"🔧 Preparing to send final response")
+                    print(f"🔧 final_response type: {type(final_response)}")
+                    print(f"🔧 final_response has choices: {hasattr(final_response, 'choices')}")
+                    
                     if hasattr(final_response, 'choices') and len(final_response.choices) > 0:
                         final_text = final_response.choices[0].message.content
+                        print(f"🔧 Extracted final_text from choices: {final_text[:200] if final_text else 'None'}...")
                     else:
                         final_text = str(final_response)
-                        
-                    await websocket.send_json({
+                        print(f"🔧 Using str(final_response): {final_text[:200]}...")
+                    
+                    if not final_text:
+                        print(f"🔧 WARNING: final_text is empty or None!")
+                        final_text = "I completed the tool execution but couldn't generate a response. Please check the logs."
+                    
+                    final_message = {
                         "type": "message",
                         "role": "assistant",
                         "content": final_text,
                         "model": model
-                    })
+                    }
+                    print(f"🔧 Sending final WebSocket message: {json.dumps(final_message)[:300]}...")
+                    
+                    await websocket.send_json(final_message)
+                    print(f"🔧 Final response sent successfully")
                 else:
                     # No tool calls, just send the message
                     response_text = ""
