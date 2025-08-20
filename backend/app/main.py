@@ -350,9 +350,22 @@ async def add_composio_mcp_server(request: AddMCPServerRequest):
             server_uuid = server_result["server_id"]
             mcp_url = server_result["url"]
             
+            # CRITICAL FIX: Ensure the URL has /mcp path and user_id parameter
+            if not mcp_url.endswith("/mcp") and "/mcp?" not in mcp_url:
+                # URL is missing the /mcp path, add it
+                if not mcp_url.endswith("/"):
+                    mcp_url += "/"
+                mcp_url += "mcp"
+            
+            # Ensure user_id parameter is present
+            if "user_id=" not in mcp_url:
+                separator = "&" if "?" in mcp_url else "?"
+                mcp_url = f"{mcp_url}{separator}user_id={request.user_id}"
+            
             # Store the mapping
             mcp_server_mappings[mapping_key] = server_uuid
             print(f"Created new MCP server {server_uuid} for {request.app_name}")
+            print(f"Fixed MCP URL: {mcp_url}")
     
     # Add to remote MCP servers
     remote_mcp_servers[server_name] = RemoteServerConfig(
