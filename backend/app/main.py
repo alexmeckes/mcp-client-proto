@@ -1647,9 +1647,24 @@ async def websocket_chat(websocket: WebSocket):
             max_tools = 50  # Anthropic can handle many tools, but let's be reasonable
             if len(tools) > max_tools:
                 print(f"Warning: {len(tools)} tools exceeds limit of {max_tools}, truncating...")
-                # Prioritize Composio tools (Gmail, etc) by keeping those that start with "composio"
-                composio_tools = [t for t in tools if t["function"]["name"].startswith("composio")]
-                other_tools = [t for t in tools if not t["function"]["name"].startswith("composio")]
+                # Prioritize Composio tools (Gmail, Slack, etc) by keeping those that start with "composio"
+                composio_tools = []
+                other_tools = []
+                
+                for t in tools:
+                    # Check the structure - tools at this point have type.function.name structure
+                    tool_name = ""
+                    if isinstance(t, dict):
+                        if "type" in t and isinstance(t["type"], dict):
+                            if "function" in t["type"] and isinstance(t["type"]["function"], dict):
+                                tool_name = t["type"]["function"].get("name", "")
+                        elif "function" in t and isinstance(t["function"], dict):
+                            tool_name = t["function"].get("name", "")
+                    
+                    if tool_name.startswith("composio"):
+                        composio_tools.append(t)
+                    else:
+                        other_tools.append(t)
                 
                 # Take all Composio tools first, then fill with others
                 tools = composio_tools[:max_tools]
@@ -1657,6 +1672,9 @@ async def websocket_chat(websocket: WebSocket):
                     tools.extend(other_tools[:max_tools - len(tools)])
                 
                 print(f"Reduced to {len(tools)} tools (prioritizing Composio services)")
+                print(f"  - Composio tools included: {len([t for t in tools if 'composio' in str(t).lower()])}")
+                print(f"  - Gmail tools included: {len([t for t in tools if 'gmail' in str(t).lower()])}")
+                print(f"  - Slack tools included: {len([t for t in tools if 'slack' in str(t).lower()])}")
             
             # Format messages for the model
             llm_messages = [
@@ -1664,8 +1682,25 @@ async def websocket_chat(websocket: WebSocket):
                 for msg in messages
             ]
             
+            # Convert tools to the format expected by the model
+            # Tools at this point have type.function structure, but model expects just function
+            model_tools = []
+            for tool in tools:
+                if isinstance(tool, dict):
+                    if "type" in tool and isinstance(tool["type"], dict) and "function" in tool["type"]:
+                        # Extract the function from type.function structure
+                        model_tools.append({
+                            "type": "function",
+                            "function": tool["type"]["function"]
+                        })
+                    elif "function" in tool:
+                        # Already in the right format
+                        model_tools.append(tool)
+            
+            tools = model_tools
+            
             # Add system message about available Gmail tools if present
-            gmail_tools = [t for t in tools if "GMAIL" in t["function"]["name"]]
+            gmail_tools = [t for t in tools if isinstance(t, dict) and "function" in t and "GMAIL" in str(t["function"].get("name", ""))]
             if gmail_tools:
                 gmail_tool_names = [t["function"]["name"].replace("composio_gmail__", "") for t in gmail_tools[:5]]
                 system_msg = f"You have access to {len(gmail_tools)} Gmail tools including: {', '.join(gmail_tool_names)}... Use these tools to help the user with their email tasks."
