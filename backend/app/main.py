@@ -1594,7 +1594,15 @@ async def websocket_chat(websocket: WebSocket):
                         print(f"✅ Added {tools_added_count} tools from {server} to final list")
                         # Log specific Gmail tools for debugging
                         if "gmail" in server.lower():
-                            gmail_tools = [t for t in tools if "gmail" in t.get("type", {}).get("function", {}).get("name", "").lower()]
+                            gmail_tools = []
+                            for t in tools:
+                                if isinstance(t, dict) and "type" in t:
+                                    if isinstance(t["type"], dict) and "function" in t["type"]:
+                                        func = t["type"]["function"]
+                                        if isinstance(func, dict) and "name" in func:
+                                            if "gmail" in str(func["name"]).lower():
+                                                gmail_tools.append(t)
+                            
                             print(f"🔧 Gmail-specific tools found: {len(gmail_tools)}")
                             if gmail_tools:
                                 for gt in gmail_tools[:3]:
@@ -1618,13 +1626,21 @@ async def websocket_chat(websocket: WebSocket):
             print(f"Total unique tools: {len(tools)}")
             
             # Debug: Show Gmail tools in final list
-            gmail_tools_final = [t for t in tools if "gmail" in t.get("type", {}).get("function", {}).get("name", "").lower()]
+            gmail_tools_final = []
+            for t in tools:
+                if isinstance(t, dict) and "type" in t:
+                    if isinstance(t["type"], dict) and "function" in t["type"]:
+                        func = t["type"]["function"]
+                        if isinstance(func, dict) and "name" in func:
+                            if "gmail" in str(func["name"]).lower():
+                                gmail_tools_final.append(t)
+            
             print(f"🔧 Gmail tools in final unique list: {len(gmail_tools_final)}")
             if gmail_tools_final:
                 print(f"🔧 Sample Gmail tools available:")
                 for gt in gmail_tools_final[:5]:
                     tool_name = gt['type']['function']['name']
-                    tool_desc = gt['type']['function']['description'][:80]
+                    tool_desc = gt['type']['function'].get('description', '')[:80]
                     print(f"  - {tool_name}: {tool_desc}...")
             
             # Limit tools if there are too many (to avoid overloading the API)
@@ -1683,7 +1699,14 @@ async def websocket_chat(websocket: WebSocket):
                     print(f"🔧 Sending {len(tools)} tools to model {model}")
                     
                     # Debug Gmail tools being sent
-                    gmail_in_final = [t for t in tools if "gmail" in t.get("function", {}).get("name", "").lower()]
+                    gmail_in_final = []
+                    for t in tools:
+                        if isinstance(t, dict) and "function" in t:
+                            func = t["function"]
+                            if isinstance(func, dict) and "name" in func:
+                                if "gmail" in str(func["name"]).lower():
+                                    gmail_in_final.append(t)
+                    
                     print(f"🔧 Gmail tools being sent to model: {len(gmail_in_final)}")
                     if gmail_in_final:
                         print("🔧 Gmail tool names:")
