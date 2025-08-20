@@ -1644,7 +1644,7 @@ async def websocket_chat(websocket: WebSocket):
                     print(f"  - {tool_name}: {tool_desc}...")
             
             # Limit tools if there are too many (to avoid overloading the API)
-            max_tools = 50  # Anthropic can handle many tools, but let's be reasonable
+            max_tools = 200  # Anthropic can handle hundreds of tools efficiently
             if len(tools) > max_tools:
                 print(f"Warning: {len(tools)} tools exceeds limit of {max_tools}, truncating...")
                 # Prioritize Composio tools (Gmail, Slack, etc) by keeping those that start with "composio"
