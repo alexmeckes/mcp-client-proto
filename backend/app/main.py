@@ -1680,11 +1680,14 @@ async def websocket_chat(websocket: WebSocket):
                         print(f"🔧 Executing tool: {tool_call.function.name}")
                         # Parse server and tool name from the combined name
                         full_name = tool_call.function.name
+                        print(f"🔧 Parsing tool name: {full_name}")
                         if "__" in full_name:
                             server_name, tool_name = full_name.split("__", 1)
                         else:
                             server_name = "unknown"
                             tool_name = full_name
+                        print(f"🔧 Parsed server_name: {server_name}, tool_name: {tool_name}")
+                        print(f"🔧 Available remote servers: {list(remote_mcp_servers.keys())}")
                             
                         # Parse arguments
                         try:
@@ -1704,6 +1707,8 @@ async def websocket_chat(websocket: WebSocket):
                         if server_name in remote_mcp_servers:
                             # Remote server execution
                             config = remote_mcp_servers[server_name]
+                            print(f"🔧 Tool execution config endpoint: {config.endpoint}")
+                            print(f"🔧 Tool execution config headers: {config.headers}")
                             async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
                                 try:
                                     headers = config.headers.copy()
