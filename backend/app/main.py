@@ -1012,11 +1012,14 @@ async def websocket_chat(websocket: WebSocket):
                                     except Exception as e:
                                         print(f"GET request failed: {str(e)}")
                                 
+                                print(f"🔧 Continuing after GET request to initialize MCP session for {server}")
+                                
                                 # Initialize server_tools and session tracking
                                 server_tools = []
                                 mcp_session_id = None
                                 negotiated_protocol = "2025-03-26"
                                 
+                                print(f"🔧 About to send initialize request to {config.endpoint}")
                                 # First, initialize the MCP session
                                 # Use the newer protocol version that Composio supports
                                 init_headers = headers.copy()
@@ -1719,19 +1722,26 @@ async def websocket_chat(websocket: WebSocket):
                                     elif config.auth_token:
                                         headers["Authorization"] = f"Bearer {config.auth_token}"
                                     
+                                    tool_request = {
+                                        "jsonrpc": "2.0",
+                                        "method": "tools/call",
+                                        "params": {
+                                            "name": tool_name,
+                                            "arguments": arguments
+                                        },
+                                        "id": 1
+                                    }
+                                    print(f"🔧 Sending tool call request: {json.dumps(tool_request)}")
+                                    
                                     tool_response = await client.post(
                                         config.endpoint,
                                         headers=headers,
-                                        json={
-                                            "jsonrpc": "2.0",
-                                            "method": "tools/call",
-                                            "params": {
-                                                "name": tool_name,
-                                                "arguments": arguments
-                                            },
-                                            "id": 1
-                                        }
+                                        json=tool_request
                                     )
+                                    
+                                    print(f"🔧 Tool call response status: {tool_response.status_code}")
+                                    print(f"🔧 Tool call response headers: {dict(tool_response.headers)}")
+                                    print(f"🔧 Tool call response body (first 500 chars): {tool_response.text[:500]}")
                                     
                                     # Handle Composio SSE response
                                     if is_composio and tool_response.headers.get("content-type", "").startswith("text/event-stream"):
@@ -1751,7 +1761,9 @@ async def websocket_chat(websocket: WebSocket):
                                         result = tool_response.json()
                                     
                                     tool_result = result.get("result", {"error": "No result"})
+                                    print(f"🔧 Tool result extracted: {json.dumps(tool_result, indent=2)[:500]}")
                                 except Exception as e:
+                                    print(f"🔧 Exception during tool execution: {type(e).__name__}: {str(e)}")
                                     tool_result = {"error": str(e)}
                         else:
                             # Local server via mcpd
@@ -1773,13 +1785,16 @@ async def websocket_chat(websocket: WebSocket):
                         })
                         
                         # Add tool result to conversation
-                        llm_messages.append({
+                        tool_message = {
                             "role": "tool",
                             "tool_call_id": tool_call.id,
                             "content": json.dumps(tool_result)
-                        })
+                        }
+                        print(f"🔧 Adding tool result to conversation: {tool_message['content'][:200]}...")
+                        llm_messages.append(tool_message)
                     
                     # Continue conversation with tool results with retry logic
+                    print(f"🔧 Calling model again with {len(llm_messages)} messages including tool results")
                     final_response = None
                     for attempt in range(max_retries):
                         try:
@@ -1789,6 +1804,7 @@ async def websocket_chat(websocket: WebSocket):
                                 messages=llm_messages,
                                 max_tokens=4096
                             )
+                            print(f"🔧 Got final response after tool execution")
                             break
                         except Exception as e:
                             error_str = str(e)
