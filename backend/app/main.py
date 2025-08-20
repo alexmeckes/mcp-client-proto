@@ -2089,7 +2089,7 @@ async def websocket_chat(websocket: WebSocket):
                     print(f"🔧 Sending final WebSocket message: {json.dumps(final_message)[:300]}...")
                     
                     await websocket.send_json(final_message)
-                    print(f"🔧 Final response sent successfully")
+                    print(f"🔧 Final response sent successfully, about to break from tool rounds loop")
                     break  # Exit the tool rounds loop (not the main message loop)
                 else:
                     # No tool calls, just send the message
@@ -2130,6 +2130,10 @@ async def websocket_chat(websocket: WebSocket):
                     "type": "error",
                     "message": f"Error calling {model}: {str(e)}"
                 })
+            
+            # End of message processing, loop back to wait for next message
+            print("🔧 Message processing complete, looping back to wait for next message...")
+            # The while True loop will continue here
                 
     except WebSocketDisconnect:
         print("🔧 WebSocket disconnected normally")
