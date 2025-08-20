@@ -1620,15 +1620,33 @@ async def websocket_chat(websocket: WebSocket):
                     })
                     return
                 
+                # Debug: Log the response structure
+                print(f"🔧 Model response type: {type(response)}")
+                if hasattr(response, 'choices') and len(response.choices) > 0:
+                    choice = response.choices[0]
+                    print(f"🔧 Response content: {choice.message.content[:200]}...")
+                    print(f"🔧 Response has tool_calls attr: {hasattr(choice.message, 'tool_calls')}")
+                    if hasattr(choice.message, 'tool_calls'):
+                        print(f"🔧 tool_calls value: {choice.message.tool_calls}")
+                else:
+                    print(f"🔧 No choices in response: {response}")
+                
                 # Check if response contains tool calls
                 has_tool_calls = False
                 tool_calls = []
                 
+                print(f"🔧 Checking for tool calls in response...")
                 if hasattr(response, 'choices') and len(response.choices) > 0:
                     choice = response.choices[0]
+                    print(f"🔧 Response choice message has tool_calls: {hasattr(choice.message, 'tool_calls')}")
                     if hasattr(choice.message, 'tool_calls') and choice.message.tool_calls:
                         has_tool_calls = True
                         tool_calls = choice.message.tool_calls
+                        print(f"🔧 Found {len(tool_calls)} tool calls!")
+                    else:
+                        print(f"🔧 No tool calls found in response")
+                else:
+                    print(f"🔧 No response choices found")
                         
                 if has_tool_calls:
                     # Handle tool calls
@@ -1656,6 +1674,7 @@ async def websocket_chat(websocket: WebSocket):
                     
                     # Execute each tool
                     for tool_call in tool_calls:
+                        print(f"🔧 Executing tool: {tool_call.function.name}")
                         # Parse server and tool name from the combined name
                         full_name = tool_call.function.name
                         if "__" in full_name:
