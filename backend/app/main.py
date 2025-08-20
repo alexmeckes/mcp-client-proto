@@ -18,7 +18,6 @@ import subprocess
 # Removed tool_handler import since we'll simplify without Anthropic SDK
 # from app.tool_handler import handle_tool_use_response
 from app.composio_integration import ComposioIntegration
-from app.composio_tools_direct import ComposioToolsDirect
 from fastapi.responses import RedirectResponse, JSONResponse
 import uuid
 
@@ -165,13 +164,11 @@ print(f"🚀 Environment variables: PORT={os.getenv('PORT')}, COMPOSIO_API_KEY={
 try:
     print("🚀 Initializing Composio integration...")
     composio = ComposioIntegration()
-    composio_direct = ComposioToolsDirect()
     print("✅ Composio integration initialized successfully")
 except Exception as e:
     print(f"⚠️ Failed to initialize Composio integration: {e}")
     print("Continuing without Composio integration...")
     composio = None
-    composio_direct = None
 
 print("🚀 FastAPI app initialization complete")
 
@@ -223,11 +220,7 @@ async def get_composio_tools(user_id: str, app_name: Optional[str] = None):
     tools = await composio.get_available_tools(user_id, app_name)
     return {"tools": tools}
 
-@app.get("/composio/gmail-tools-direct/{user_id}")
-async def get_gmail_tools_direct(user_id: str):
-    """Get Gmail tools directly without MCP"""
-    tools = await composio_direct.get_gmail_tools(user_id)
-    return {"tools": tools, "source": "direct"}
+# Removed unused gmail-tools-direct endpoint
 
 class AddMCPServerRequest(BaseModel):
     user_id: str
