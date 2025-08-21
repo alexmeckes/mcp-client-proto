@@ -1762,13 +1762,16 @@ async def websocket_chat(websocket: WebSocket):
                 
                 for attempt in range(max_retries):
                     try:
+                        # Call model through any-llm
                         response = await asyncio.to_thread(
                             completion,
                             model=model,
                             messages=llm_messages,
                             tools=tools if tools else None,
                             max_tokens=4096
+                            # stream=True can be added later for streaming support
                         )
+                        
                         break  # Success, exit retry loop
                     except Exception as e:
                         error_str = str(e)
