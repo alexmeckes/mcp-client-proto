@@ -50,8 +50,8 @@ class ComposioIntegration:
             # Create or get entity for this user
             entity = self.client.get_entity(id=user_id)
             
-            # First, get or create an auth config for this app
-            # This ensures we have a proper auth_config_id for MCP server creation
+            # Optionally get or create an auth config for this app
+            # This helps Composio know which OAuth configuration to use
             auth_config_id = None
             try:
                 # Try to get the default Composio auth config
@@ -90,17 +90,10 @@ class ComposioIntegration:
                     redirect_url=callback_url
                 )
             
-            # Store the auth_config_id for later use
-            if auth_config_id and user_id and app_name:
-                # Store in a class variable for retrieval after OAuth
-                if not hasattr(self, 'auth_config_mapping'):
-                    self.auth_config_mapping = {}
-                self.auth_config_mapping[f"{user_id}:{app_name}"] = auth_config_id
             
             return {
                 "redirect_url": connection_request.redirectUrl,
                 "connection_id": connection_request.connectedAccountId if hasattr(connection_request, 'connectedAccountId') else None,
-                "auth_config_id": auth_config_id,  # Include auth_config_id
                 "user_id": user_id,
                 "app": app_name
             }
@@ -128,32 +121,11 @@ class ComposioIntegration:
             
             result = []
             for conn in connections:
-                # Log the actual connection object to understand its structure
-                # Check all available attributes
-                conn_dict = {}
-                if hasattr(conn, '__dict__'):
-                    conn_dict = conn.__dict__
-                    logger.info(f"Connection attributes: {list(conn_dict.keys())}")
-                
-                # Try to find auth_config_id
-                auth_config_id = None
-                if hasattr(conn, 'authConfigId'):
-                    auth_config_id = conn.authConfigId
-                elif hasattr(conn, 'auth_config_id'):
-                    auth_config_id = conn.auth_config_id
-                elif hasattr(conn, 'authConfig'):
-                    auth_config_id = conn.authConfig
-                
-                logger.info(f"Connection: app={conn.appName if hasattr(conn, 'appName') else 'N/A'}, "
-                          f"id={conn.id if hasattr(conn, 'id') else 'N/A'}, "
-                          f"auth_config_id={auth_config_id}")
-                
                 result.append({
                     "app": conn.appName if hasattr(conn, 'appName') else None,
                     "status": conn.status if hasattr(conn, 'status') else None,
                     "connected_at": conn.createdAt if hasattr(conn, 'createdAt') else None,
-                    "connection_id": conn.id if hasattr(conn, 'id') else None,
-                    "auth_config_id": auth_config_id  # Add auth_config_id to result
+                    "connection_id": conn.id if hasattr(conn, 'id') else None
                 })
             
             return result
@@ -334,86 +306,6 @@ class ComposioIntegration:
                 "error": str(e)
             }
     
-    async def get_or_create_auth_config(self, app_name: str) -> Optional[str]:
-        """
-        Get or create an auth config for an app.
-        This is REQUIRED for MCP servers to expose tools.
-        
-        Returns:
-            auth_config_id starting with 'ac_' or None
-        """
-        if not self.api_key:
-            logger.error("No API key configured")
-            return None
-            
-        try:
-            import httpx
-            headers = {
-                "X-API-Key": self.api_key,
-                "Content-Type": "application/json"
-            }
-            
-            async with httpx.AsyncClient() as client:
-                # First, try to get existing auth configs
-                print(f"🔧 Getting auth configs for {app_name}")
-                logger.info(f"Getting auth configs for {app_name}")
-                
-                # Use the correct v3 API with underscore (not hyphen)
-                print(f"🔧 Getting auth configs from v3 API")
-                response = await client.get(
-                    "https://backend.composio.dev/api/v3/auth_configs",
-                    headers=headers,  # Already contains X-API-Key
-                    params={"app": app_name.upper()},
-                    timeout=30.0
-                )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    logger.info(f"Auth configs response: {json.dumps(data, indent=2)[:500]}")
-                    
-                    # Look for existing auth config
-                    configs = data if isinstance(data, list) else data.get("items", data.get("data", []))
-                    for config in configs:
-                        config_id = config.get("id", config.get("authConfigId"))
-                        if config_id and config_id.startswith("ac_"):
-                            logger.info(f"Found existing auth config: {config_id}")
-                            return config_id
-                
-                # If no existing config, create one using v3 API
-                logger.info(f"Creating new auth config for {app_name}")
-                create_response = await client.post(
-                    "https://backend.composio.dev/api/v3/auth_configs",
-                    headers=headers,  # Already contains X-API-Key
-                    json={
-                        "app": app_name.upper(),
-                        "use_composio_managed_auth": True,  # Use Composio's managed OAuth
-                        "name": f"{app_name} Auth Config",
-                        "redirect_uri": "https://backend.composio.dev/api/v3/toolkits/auth/callback"
-                    },
-                    timeout=30.0
-                )
-                
-                if create_response.status_code in [200, 201]:
-                    config = create_response.json()
-                    config_id = config.get("id", config.get("authConfigId"))
-                    if config_id and config_id.startswith("ac_"):
-                        logger.info(f"Created new auth config: {config_id}")
-                        return config_id
-                    else:
-                        logger.error(f"Created config but got invalid ID: {config_id}")
-                else:
-                    logger.error(f"Failed to create auth config: {create_response.status_code} - {create_response.text[:200]}")
-                    
-        except Exception as e:
-            logger.error(f"Error getting/creating auth config: {e}")
-            
-        return None
-    
-    async def create_mcp_server_old_without_fix(self, user_id: str, app_name: str) -> Optional[Dict[str, str]]:
-        """Old method without auth_config_id fix - should not be used"""
-        print(f"🚨 WARNING: Using old method without auth_config_id fix")
-        # This is the old implementation that doesn't get/create auth_config_id properly
-    
     async def create_mcp_server(self, user_id: str, app_name: str) -> Optional[Dict[str, str]]:
         """
         Create an MCP server instance for a connected app via Composio API
@@ -425,11 +317,6 @@ class ComposioIntegration:
         Returns:
             Dict with server_id and url, or None if failed
         """
-        logger.info("=" * 80)
-        logger.info("🚀🚀🚀 FIXED VERSION OF create_mcp_server IS RUNNING! 🚀🚀🚀")
-        logger.info("This should use toolkits + connection_ids, NOT authConfigId + apps")
-        logger.info("=" * 80)
-        
         if not self.api_key:
             logger.error("Composio API key not configured")
             return None
@@ -443,129 +330,7 @@ class ComposioIntegration:
                 "Content-Type": "application/json"
             }
             
-            # First check if the user has this app connected and get auth_config_id
             logger.info(f"Creating MCP server for {app_name} with entity {user_id}")
-            
-            auth_config_id = None
-            
-            # CRITICAL: We MUST have a proper auth_config_id for tools to work
-            # Always try to get or create one first
-            print(f"🔧 NEW CODE RUNNING: Ensuring we have proper auth_config_id for {app_name}")
-            logger.info(f"🔧 NEW CODE: Ensuring we have proper auth_config_id for {app_name}")
-            auth_config_id = await self.get_or_create_auth_config(app_name)
-            print(f"🔧 NEW CODE: get_or_create_auth_config returned: {auth_config_id}")
-            
-            if not auth_config_id or not auth_config_id.startswith("ac_"):
-                logger.error(f"Failed to get proper auth_config_id for {app_name}")
-                logger.error("Without auth_config_id, MCP server will have no tools!")
-                # Try fallback methods
-                
-                # Check if we have a stored auth_config_id from OAuth initiation
-                if hasattr(self, 'auth_config_mapping'):
-                    mapping_key = f"{user_id}:{app_name}"
-                    if mapping_key in self.auth_config_mapping:
-                        auth_config_id = self.auth_config_mapping[mapping_key]
-                        logger.info(f"Using stored auth_config_id from OAuth: {auth_config_id}")
-                
-                # If still not found, check connections
-                if not auth_config_id or not auth_config_id.startswith("ac_"):
-                    connections = await self.get_user_connections(user_id)
-                    logger.info(f"Found {len(connections)} connections for user")
-                    
-                    for conn in connections:
-                        conn_app = conn.get("app") or conn.get("appName") or ""
-                        if conn_app.lower() == app_name.lower():
-                            # Look for auth_config_id
-                            possible_fields = ["auth_config_id", "authConfigId", "auth_config", "authConfig"]
-                            for field in possible_fields:
-                                if field in conn and conn[field] and str(conn[field]).startswith("ac_"):
-                                    auth_config_id = conn[field]
-                                    logger.info(f"Found auth_config_id in connection: {auth_config_id}")
-                                    break
-                            
-                            if not auth_config_id or not auth_config_id.startswith("ac_"):
-                                # Last resort - use connection ID (won't work for tools)
-                                connection_id = conn.get("connection_id") or conn.get("id")
-                                logger.error(f"No proper auth_config_id found! Using connection_id: {connection_id}")
-                                logger.error("WARNING: Server will be created but tools won't work!")
-                                auth_config_id = connection_id
-                            break
-            
-            if not auth_config_id:
-                # Try to get or create auth config for the app
-                logger.warning(f"No auth_config_id found in connections, attempting to fetch/create one")
-                
-                try:
-                    # First, try to get the default Composio auth config for the app
-                    # This is what gets used when you do OAuth through Composio
-                    async with httpx.AsyncClient() as client:
-                        # Get auth configs using the Composio SDK approach
-                        logger.info(f"Getting default auth config for {app_name}")
-                        
-                        # Try using the SDK to get the auth config
-                        if self.client:
-                            try:
-                                # Get the default auth config using Composio SDK
-                                from composio.client.collections import AuthConfigManager
-                                auth_manager = AuthConfigManager(self.client)
-                                
-                                # Get or create default auth config for the app
-                                auth_configs = auth_manager.get(app=app_name.upper())
-                                if auth_configs and len(auth_configs) > 0:
-                                    auth_config_id = auth_configs[0].id if hasattr(auth_configs[0], 'id') else None
-                                    logger.info(f"Found auth config via SDK: {auth_config_id}")
-                            except Exception as e:
-                                logger.error(f"SDK approach failed: {e}")
-                        
-                        # If SDK didn't work, try API
-                        if not auth_config_id:
-                            # Try to get existing auth configs via API
-                            auth_response = await client.get(
-                                f"https://backend.composio.dev/api/v1/auth-configs",
-                                headers=headers,
-                                params={"app": app_name.upper()},
-                                timeout=30.0
-                            )
-                        
-                        if auth_response.status_code == 200:
-                            auth_configs = auth_response.json()
-                            logger.info(f"Auth configs response: {json.dumps(auth_configs, indent=2)[:500]}")
-                            
-                            # Look for an auth config we can use
-                            if isinstance(auth_configs, list) and len(auth_configs) > 0:
-                                auth_config_id = auth_configs[0].get("id")
-                                logger.info(f"Using existing auth config: {auth_config_id}")
-                            elif isinstance(auth_configs, dict):
-                                items = auth_configs.get("items", auth_configs.get("data", []))
-                                if items and len(items) > 0:
-                                    auth_config_id = items[0].get("id")
-                                    logger.info(f"Using existing auth config: {auth_config_id}")
-                        
-                        # If still no auth config, try creating one
-                        if not auth_config_id:
-                            logger.info(f"Creating new auth config for {app_name}")
-                            create_response = await client.post(
-                                "https://backend.composio.dev/api/v1/auth-configs",
-                                headers=headers,
-                                json={
-                                    "app": app_name.upper(),
-                                    "useComposioAuth": True  # Use Composio's managed auth
-                                },
-                                timeout=30.0
-                            )
-                            
-                            if create_response.status_code in [200, 201]:
-                                auth_config = create_response.json()
-                                auth_config_id = auth_config.get("id")
-                                logger.info(f"Created auth config: {auth_config_id}")
-                            else:
-                                logger.error(f"Failed to create auth config: {create_response.status_code} - {create_response.text[:200]}")
-                except Exception as e:
-                    logger.error(f"Error getting/creating auth config: {e}")
-                
-                if not auth_config_id:
-                    logger.error(f"No auth config found for {app_name}. User needs to connect the app first.")
-                    return None
             
             # Create MCP server with the connected app
             # Name must be 4-30 chars, only letters, numbers, spaces, and hyphens (no underscores)
@@ -610,26 +375,20 @@ class ComposioIntegration:
                     logger.info(f"Found connection_id: {connection_id}")
                     break
             
-            # Build the request data using WORKING v3 API format
-            # We discovered that using toolkits + connection_ids works, NOT authConfigId + apps
-            print(f"🚀🚀🚀 BUILDING REQUEST WITH FIXED FORMAT 🚀🚀🚀")
-            print(f"Using toolkits: [{app_name.upper()}], NOT apps/authConfigId")
+            # Build the request data using the correct v3 API format
+            # Use toolkits + connection_ids (not apps + authConfigId)
             data = {
                 "name": safe_name,  # Name with only allowed characters
-                "toolkits": [app_name.upper()],  # Use toolkits, not apps - THIS IS THE FIX
+                "toolkits": [app_name.upper()],  # Use toolkits array format
                 "entity_id": user_id,  # Link to user
             }
-            print(f"Initial data structure: {data}")
             
-            # Add connection_id if we have it - THIS IS CRITICAL for tools to work
+            # Add connection_id if we have it - required for tools to work
             if connection_id:
                 data["connection_ids"] = [connection_id]
-                logger.info(f"Including connection_id: {connection_id} - REQUIRED for tools to work")
+                logger.info(f"Including connection_id: {connection_id} for tools access")
             else:
-                logger.error(f"WARNING: No connection_id found - MCP server will have no tools!")
-            
-            # Log that we're using the working format
-            logger.info(f"🚀 Using WORKING format: toolkits + connection_ids (not authConfigId + apps) - FIXED!")
+                logger.warning(f"No connection_id found - MCP server will have limited functionality")
             
             logger.info(f"MCP server creation request: {json.dumps(data, indent=2)}")
             
